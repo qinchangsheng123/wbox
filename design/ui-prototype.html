@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>僚机 Wingman · UI 设计系统（纯白 / 纯黑）</title>
+<style>
+/* ============================================================
+   僚机 Wingman UI Design System
+   单一来源：设计令牌 → 组件 → 界面。全部颜色为中性灰阶，
+   Light 背景 #FFFFFF / Dark 背景 #000000，无任何彩色。
+   ============================================================ */
+:root, [data-theme="light"]{
+  --bg:#FFFFFF;          --fg:#000000;
+  --text-2:#595959;      --text-3:#767676;
+  --line:#E5E5E5;        --border:#767676;
+  --hover:#F5F5F5;       --active:#EBEBEB;
+  --inverse:#000000;     --inverse-fg:#FFFFFF;
+  --focus:#000000;       --disabled:#BFBFBF;
+  --shadow:0 12px 40px rgba(0,0,0,.10);
+  --scrim:rgba(0,0,0,.28);
+}
+[data-theme="dark"]{
+  --bg:#000000;          --fg:#FFFFFF;
+  --text-2:#B3B3B3;      --text-3:#8C8C8C;
+  --line:#2A2A2A;        --border:#8C8C8C;
+  --hover:#141414;       --active:#202020;
+  --inverse:#FFFFFF;     --inverse-fg:#000000;
+  --focus:#FFFFFF;       --disabled:#4D4D4D;
+  --shadow:0 12px 40px rgba(255,255,255,.08);
+  --scrim:rgba(255,255,255,.16);
+}
+
+/* ---------- 基础 ---------- */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:"Segoe UI","Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;
+  font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  transition:background-color .18s ease, color .18s ease;
+}
+button{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--focus); outline-offset:2px}
+.defs{position:absolute;width:0;height:0;overflow:hidden}
+.ic{display:block; fill:currentColor; color:var(--fg); flex:none}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:"Cascadia Mono","Consolas","SFMono-Regular",monospace; font-variant-numeric:tabular-nums}
+
+/* ---------- 原型外壳 ---------- */
+.shell{min-height:100vh; display:flex; flex-direction:column}
+.topbar{
+  height:64px; flex:none; display:flex; align-items:center; justify-content:space-between;
+  gap:24px; padding:0 32px; border-bottom:1px solid var(--line);
+  background:var(--bg); position:sticky; top:0; z-index:20;
+}
+.brandline{display:flex; align-items:center; gap:12px; min-width:0}
+.brandline .ic{width:26px;height:26px}
+.brandline strong{font-size:15px; font-weight:600; letter-spacing:-.01em; white-space:nowrap}
+.brandline .tag{
+  font-size:11px; color:var(--text-2); border:1px solid var(--line);
+  border-radius:3px; padding:2px 7px; white-space:nowrap;
+}
+.controls{display:flex; align-items:center; gap:12px; flex:none}
+.seg{display:flex; border:1px solid var(--border); border-radius:4px; overflow:hidden}
+.seg button{
+  appearance:none; background:transparent; border:0; border-right:1px solid var(--line);
+  padding:0 14px; height:32px; font-size:13px; cursor:pointer; white-space:nowrap;
+  transition:background-color .15s ease;
+}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:var(--hover)}
+.seg button[aria-pressed="true"]{background:var(--inverse); color:var(--inverse-fg)}
+.seg--view button[aria-pressed="true"]{background:var(--inverse); color:var(--inverse-fg)}
+.seg-label{font-size:11px; color:var(--text-3); letter-spacing:.08em; text-transform:uppercase}
+.stage{flex:1; padding:40px 32px 64px}
+.view{display:none; max-width:1180px; margin:0 auto}
+.view.active{display:block; animation:fade .18s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.foot{
+  border-top:1px solid var(--line); padding:14px 32px; display:flex;
+  justify-content:space-between; gap:16px; font-size:12px; color:var(--text-3);
+}
+
+/* ---------- 通用排版件 ---------- */
+.section{margin-bottom:40px}
+.section-head{display:flex; align-items:baseline; gap:12px; margin-bottom:16px}
+.section-head h2{font-size:18px; font-weight:600; margin:0; letter-spacing:-.01em}
+.section-head span{font-size:12px; color:var(--text-3)}
+.rule{height:1px; background:var(--line); border:0; margin:0}
+.lead{font-size:13px; color:var(--text-2); max-width:760px; margin:0 0 24px}
+.kicker{font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-3); margin:0 0 8px}
+.note{font-size:12px; color:var(--text-3); margin-top:10px}
+
+/* ---------- 界面预览：窗口 ---------- */
+.canvas{
+  border:1px solid var(--line); border-radius:8px; background:var(--bg);
+  padding:56px 40px; display:flex; justify-content:center;
+}
+.canvas--stack{flex-direction:column; align-items:center; gap:32px}
+.set-group{border-top:1px solid var(--line); margin-top:18px; padding-top:14px}
+.set-group .kicker{display:block; margin-bottom:10px}
+.set-group .statusline{margin-top:0}
+.win-h1{font-size:20px; font-weight:600; letter-spacing:-.01em; margin:0}
+.brand .push{margin-left:auto}
+
+/* ---------- 第二版：安装程序 ---------- */
+.setup-dir{display:flex; gap:8px; align-items:center}
+.setup-dir .input{flex:1; min-width:0}
+.setup-log{
+  border:1px solid var(--line); background:var(--hover); border-radius:4px;
+  padding:12px 14px; font-size:12px; line-height:1.75; color:var(--text-2);
+  word-break:break-all;
+}
+.setup-progress{height:6px; background:var(--line); border-radius:3px; overflow:hidden}
+.setup-progress i{display:block; height:100%; background:var(--fg)}
+.setup-done{display:flex; align-items:center; gap:14px; padding:6px 0 18px}
+.setup-done .ic{width:34px;height:34px}
+.setup-foot{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.setup-foot .grow{margin-right:auto}
+.window{
+  width:640px; max-width:100%; background:var(--bg);
+  border:1px solid var(--line); border-radius:8px;
+  box-shadow:var(--shadow); overflow:hidden;
+}
+.win-title{
+  height:44px; display:flex; align-items:center; gap:10px; padding:0 14px;
+  border-bottom:1px solid var(--line); font-size:12px; color:var(--text-2);
+}
+.win-title .ic{width:16px;height:16px; color:var(--fg)}
+.win-title .t{flex:1; color:var(--fg); font-size:13px; font-weight:600}
+.win-btns{display:flex; gap:2px}
+.win-btns i{width:30px;height:28px; display:grid; place-items:center; font-style:normal; color:var(--text-2)}
+.win-btns i::before{content:""; display:block; width:10px; height:10px; border:1px solid currentColor}
+.win-btns i:nth-child(1)::before{border-width:0 0 1px 0; height:1px; width:10px}
+.win-btns i:nth-child(3)::before{background:currentColor; border:0; clip-path:polygon(0 0,100% 0,100% 10%,10% 10%,10% 100%,0 100%,0 90%,90% 90%,90% 0); opacity:.55}
+.win-body{padding:28px 32px 26px}
+
+.brand{display:flex; align-items:center; gap:12px}
+.brand .ic{width:34px;height:34px}
+.brand h1{font-size:20px; line-height:1.25; font-weight:600; margin:0; letter-spacing:-.02em}
+.brand .ver{font-size:11px; color:var(--text-2); border:1px solid var(--border); border-radius:3px; padding:1px 6px; margin-left:2px}
+.subtitle{font-size:13px; color:var(--text-2); margin:10px 0 0}
+
+.feature-list{margin-top:22px; border-top:1px solid var(--line)}
+.frow{
+  display:flex; align-items:center; gap:16px; min-height:58px;
+  border-bottom:1px solid var(--line); padding:0 8px; margin:0 -8px;
+  transition:background-color .15s ease;
+}
+.frow:hover{background:var(--hover)}
+.frow .name{flex:1; font-size:16px; font-weight:600; letter-spacing:-.01em; position:relative; cursor:help}
+/* 名称悬停简介：反色块，文案与 src/settings_gui.py 的 FEATURES 常量一致 */
+.frow .name[data-tip]:hover::after,
+.frow .name[data-tip]:focus-visible::after{
+  content:attr(data-tip); position:absolute; left:0; top:calc(100% + 12px); z-index:30;
+  width:max-content; max-width:360px; white-space:pre-line;
+  background:var(--inverse); color:var(--inverse-fg);
+  border-radius:4px; padding:10px 12px; font-size:12px; font-weight:400;
+  line-height:1.6; letter-spacing:0; box-shadow:var(--shadow);
+}
+.frow .ficon{width:22px;height:22px; color:var(--text-2); flex:none}
+
+.optrow{
+  display:flex; align-items:center; gap:16px; min-height:52px;
+  padding:0 8px; margin:14px -8px 0;
+}
+.optrow .label{flex:1; font-size:14px}
+
+.statusline{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--text-2); margin-top:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--fg);flex:none}
+.statusline .sep{color:var(--text-3)}
+.statusline .right{margin-left:auto; color:var(--text-3)}
+
+.actions{margin-top:22px; padding-top:20px; border-top:1px solid var(--line)}
+.btnrow{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px}
+.btnrow:last-child{margin-bottom:0}
+.btnrow .push{margin-left:auto}
+
+.btn{
+  height:36px; min-width:44px; padding:0 15px; border-radius:4px;
+  border:1px solid var(--border); background:transparent; color:var(--fg);
+  font-size:14px; font-weight:500; cursor:pointer;
+  transition:background-color .15s ease, opacity .15s ease;
+}
+.btn:hover{background:var(--hover)}
+.btn:active{background:var(--active)}
+.btn--primary{background:var(--inverse); color:var(--inverse-fg); border-color:var(--inverse)}
+.btn--primary:hover{opacity:.82; background:var(--inverse)}
+.btn:disabled{opacity:.38; cursor:not-allowed; background:transparent}
+.btn:disabled:hover{background:transparent}
+/* ---------- v2.2.0：齿轮按钮 + 浏览器式弹出菜单 ---------- */
+.gear-btn{
+  width:36px; height:36px; flex:none; display:grid; place-items:center;
+  border:0; background:transparent; border-radius:4px; cursor:pointer;
+  transition:background-color .15s ease;
+}
+.gear-btn:hover{background:var(--hover)}
+.gear-btn:active{background:var(--active)}
+.gear-btn .ic{width:20px; height:20px; color:var(--fg)}
+.canvas--menu{
+  display:flex; justify-content:center; align-items:flex-start;
+  min-height:560px; padding:32px 40px;
+}
+.demo-stage{position:relative; width:640px; max-width:100%; height:560px}
+.demo-stage > .window{position:relative; z-index:1}
+.menu-pop{
+  position:absolute; top:58px; right:12px; width:300px; z-index:5;
+  background:var(--bg); border:1px solid var(--line); border-radius:6px;
+  box-shadow:var(--shadow); overflow:hidden; padding:6px 0 0;
+}
+.mrow{
+  display:flex; align-items:center; gap:12px; min-height:36px;
+  padding:0 12px; cursor:pointer; transition:background-color .15s ease;
+}
+.mrow:hover{background:var(--hover)}
+.mrow .ic{width:16px; height:16px; color:var(--text-2)}
+.mrow .t{flex:1; font-size:13px; font-weight:400; white-space:nowrap}
+.mrow .hint{font-size:12px; color:var(--text-3); white-space:nowrap}
+.mrow .mark{width:14px; height:14px; color:var(--fg)}
+.mrow .switch{width:44px; height:32px}
+.msep{height:1px; background:var(--line); margin:7px 0}
+.mfoot{
+  padding:9px 14px 11px; border-top:1px solid var(--line);
+  font-size:12px; color:var(--text-3);
+}
+
+/* ---------- Switch ---------- */
+.switch{
+  appearance:none; border:0; background:transparent; padding:0; margin:0;
+  width:44px; height:44px; flex:none; position:relative; cursor:pointer;
+  display:grid; place-items:center; border-radius:4px;
+}
+.switch::before{
+  content:""; width:40px; height:22px; border-radius:999px;
+  border:1.5px solid var(--border); background:transparent;
+  transition:background-color .18s ease, border-color .18s ease;
+}
+.switch::after{
+  content:""; position:absolute; top:50%; left:6px;
+  width:14px; height:14px; border-radius:50%; background:var(--fg);
+  transform:translateY(-50%);
+  transition:transform .18s ease, background-color .18s ease;
+}
+.switch[aria-checked="true"]::before{background:var(--fg); border-color:var(--fg)}
+.switch[aria-checked="true"]::after{background:var(--bg); transform:translate(18px,-50%)}
+.switch:hover::before{box-shadow:0 0 0 3px var(--hover)}
+.switch:disabled{opacity:.38; cursor:not-allowed}
+.switch:disabled:hover::before{box-shadow:none}
+
+/* ---------- 输入 / Toast ---------- */
+.input{
+  height:36px; padding:0 12px; border:1px solid var(--border); border-radius:4px;
+  background:transparent; color:var(--fg); font-size:14px; width:100%;
+}
+.input::placeholder{color:var(--text-3)}
+.input:focus{outline:2px solid var(--focus); outline-offset:1px; border-color:var(--fg)}
+.input:disabled{opacity:.38}
+.toast{
+  position:fixed; right:24px; bottom:24px; z-index:60;
+  background:var(--inverse); color:var(--inverse-fg);
+  border-radius:4px; padding:12px 18px; font-size:13px;
+  box-shadow:var(--shadow); opacity:0; transform:translateY(8px);
+  pointer-events:none; transition:opacity .18s ease, transform .18s ease;
+}
+.toast.show{opacity:1; transform:translateY(0)}
+
+/* ---------- 设计系统：卡片 / 表格 ---------- */
+.grid{display:grid; gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card{border:1px solid var(--line); border-radius:6px; padding:20px; background:var(--bg)}
+.card h3{font-size:14px; font-weight:600; margin:0 0 4px}
+.card p{font-size:12px; color:var(--text-2); margin:0}
+.card .cap{font-size:11px; color:var(--text-3); margin-top:12px}
+
+table{width:100%; border-collapse:collapse; font-size:13px}
+th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+th{font-size:11px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--text-3)}
+tbody tr:last-child td{border-bottom:0}
+td .swatch{display:inline-block; width:14px;height:14px; border:1px solid var(--border); border-radius:2px; vertical-align:-2px; margin-right:8px}
+.badge{display:inline-block; font-size:11px; padding:1px 6px; border:1px solid var(--border); border-radius:3px; color:var(--text-2)}
+.badge--ok{border-color:var(--fg); color:var(--fg)}
+
+.scale-row{display:flex; align-items:baseline; gap:16px; padding:10px 0; border-bottom:1px solid var(--line)}
+.scale-row:last-child{border-bottom:0}
+.scale-row .px{width:74px; flex:none; font-size:12px; color:var(--text-3)}
+.scale-row .sample{flex:1; color:var(--fg)}
+.scale-row .use{font-size:12px; color:var(--text-3)}
+.space-bar{height:12px; background:var(--fg); border-radius:2px; display:block}
+.space-row{display:flex; align-items:center; gap:12px; margin-bottom:8px}
+.space-row .lbl{width:56px; font-size:12px; color:var(--text-3)}
+
+.states{display:flex; align-items:center; gap:20px; flex-wrap:wrap}
+.state-item{display:flex; flex-direction:column; align-items:flex-start; gap:8px}
+.state-item > span{font-size:11px; color:var(--text-3)}
+
+/* ---------- 图标视图 ---------- */
+.icon-hero{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px}
+.icon-plate{
+  height:230px; border-radius:6px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:16px;
+}
+.icon-plate .ic{width:112px;height:112px}
+.icon-plate span{font-size:12px}
+.plate-light{background:#FFFFFF; color:#000000; border:1px solid var(--line)}
+.plate-light span{color:#767676}
+.plate-light .ic{color:#000000}
+.plate-dark{background:#000000; color:#FFFFFF; border:1px solid var(--line)}
+.plate-dark span{color:#8C8C8C}
+/* 展示板固定显示反相两版，不随当前主题改变；必须显式覆盖 .ic 的 --fg */
+.plate-dark .ic{color:#FFFFFF}
+.sizes{display:flex; align-items:flex-end; gap:32px; flex-wrap:wrap; padding:8px 0}
+.size-item{display:flex; flex-direction:column; align-items:center; gap:12px; width:96px}
+.size-item .holder{height:128px; display:grid; place-items:center}
+.size-item .lbl{font-size:11px; color:var(--text-3)}
+.feature-card{display:flex; align-items:center; gap:18px; border:1px solid var(--line); border-radius:6px; padding:20px}
+.feature-card .ic{width:40px;height:40px}
+.feature-card b{display:block; font-size:14px; font-weight:600}
+.feature-card small{font-size:12px; color:var(--text-2)}
+
+@media (max-width:900px){
+  .g3,.g4,.g2{grid-template-columns:1fr}
+  .icon-hero{grid-template-columns:1fr}
+  .topbar{height:auto; padding:14px 16px; flex-wrap:wrap}
+  .controls{flex-wrap:wrap}
+  .stage{padding:24px 16px 48px}
+  .canvas{padding:24px 12px}
+  .win-body{padding:22px 18px}
+  .foot{flex-direction:column; gap:4px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms !important; transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<!-- 图标定义：单一几何来源，currentColor 自动跟随纯白/纯黑主题 -->
+<svg class="defs" aria-hidden="true"><defs>
+  <symbol id="i-mark" viewBox="0 0 64 64">
+    <path fill="currentColor" fill-rule="evenodd" d="M14 7 H50 L54 11 V30 C54 43 45 52 32 60 C19 52 10 43 10 30 V11 Z M32 19 L45 35 H38 V47 H26 V35 H19 Z"/>
+  </symbol>
+  <symbol id="i-link" viewBox="0 0 24 24">
+    <path fill="currentColor" d="M3 6.2 H16 V3.8 L21.5 8 L16 12.2 V9.8 H3 Z M21 14.2 H8 V11.8 L2.5 16 L8 20.2 V17.8 H21 Z"/>
+  </symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24">
+    <path fill="currentColor" fill-rule="evenodd" d="M12 2 L20.2 5 V11 C20.2 16.2 16.8 19.7 12 22 C7.2 19.7 3.8 16.2 3.8 11 V5 Z M6.4 13 L8.2 11.2 L10.6 13.6 L15.9 8.3 L17.7 10.1 L10.6 17.2 Z"/>
+  </symbol>
+  <symbol id="i-block" viewBox="0 0 24 24">
+    <path fill="currentColor" fill-rule="evenodd" d="M5 3 H19 A2 2 0 0 1 21 5 V19 A2 2 0 0 1 19 21 H5 A2 2 0 0 1 3 19 V5 A2 2 0 0 1 5 3 Z M5.08 6.92 L17.08 18.92 L18.92 17.08 L6.92 5.08 Z"/>
+  </symbol>
+
+  <!-- v2.2.0：右上角齿轮按钮 + 浏览器式弹出菜单的线性小图标（24 网格） -->
+  <symbol id="i-gear" viewBox="0 0 24 24">
+    <path fill="currentColor" fill-rule="evenodd" d="M9.52 3.98 L9.77 1.02 L14.23 1.02 L14.48 3.98 L15.92 4.57 L18.19 2.66 L21.34 5.81 L19.43 8.08 L20.02 9.52 L22.98 9.77 L22.98 14.23 L20.02 14.48 L19.43 15.92 L21.34 18.19 L18.19 21.34 L15.92 19.43 L14.48 20.02 L14.23 22.98 L9.77 22.98 L9.52 20.02 L8.08 19.43 L5.81 21.34 L2.66 18.19 L4.57 15.92 L3.98 14.48 L1.02 14.23 L1.02 9.77 L3.98 9.52 L4.57 8.08 L2.66 5.81 L5.81 2.66 L8.08 4.57 Z M8.60 12 A3.40 3.40 0 1 0 15.40 12 A3.40 3.40 0 1 0 8.60 12 Z"/>
+  </symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M7 5 L19 12 L7 19 Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" fill="currentColor"/></symbol>
+  <symbol id="i-boot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3 V11" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-rescan" viewBox="0 0 24 24"><path d="M20 8 A8 8 0 1 0 19 16" fill="none" stroke="currentColor" stroke-width="1.7"/><path fill="currentColor" d="M15 2 L21.5 4 L17 9.5 Z"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 8 H16 M8 12 H16 M8 16 H16" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+  <symbol id="i-cfg" viewBox="0 0 24 24"><path d="M3 12 H21" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="12" r="2.6" fill="currentColor"/><circle cx="16" cy="12" r="2.6" fill="currentColor"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="3" fill="currentColor"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M12 4 A8 8 0 1 0 20 12 A6.6 6.6 0 0 1 12 4 Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="currentColor" d="M3.5 12.5 L9.5 18.5 L20.5 6.5 L22 8 L9.5 21 L2 14 Z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6 L18 18 M18 6 L6 18" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+</defs></svg>
+
+<div class="shell">
+
+  <header class="topbar">
+    <div class="brandline">
+      <svg class="ic" style="width:26px;height:26px"><use href="#i-mark"/></svg>
+      <strong>僚机 Wingman</strong>
+      <span class="tag">UI 设计稿 · v2.2.0 · 齿轮 / 浏览器式弹出菜单 / 安装程序第二版预览 · 纯白 / 纯黑双主题</span>
+    </div>
+    <div class="controls">
+      <div class="seg seg--view" role="tablist" aria-label="设计视图">
+        <button type="button" data-view="ui" aria-pressed="true">设置面板</button>
+        <button type="button" data-view="setup" aria-pressed="false">安装程序 · v2</button>
+        <button type="button" data-view="icons" aria-pressed="false">图标</button>
+        <button type="button" data-view="system" aria-pressed="false">设计规范</button>
+      </div>
+      <div class="seg" role="group" aria-label="主题切换">
+        <button type="button" data-theme="light" aria-pressed="true">纯白</button>
+        <button type="button" data-theme="dark" aria-pressed="false">纯黑</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <!-- ==================== 界面预览 ==================== -->
+    <section class="view active" id="view-ui" role="tabpanel" aria-label="界面预览">
+      <div class="section-head">
+        <h2>主页面 / 齿轮弹出菜单</h2>
+        <span>640 × 约 300 / 300 × 约 470 · 浏览器式浮层 · 与 Tkinter 实现一一对应</span>
+      </div>
+      <p class="lead">主页面只保留三行功能：无编号、无详情小字、无状态行。鼠标停在名称上 0.3 秒显示简介，拨动开关即时写回 config.json。右上角齿轮点开浏览器式弹出菜单：每行「图标 + 文字 + 右侧提示」，分组只用 1px 分隔线，悬停高亮，点击外部或 Esc 收起；每个项目独占一行、依次排列。界面只用纯白 / 纯黑与中性灰阶。</p>
+
+      <div class="canvas canvas--menu">
+        <div class="demo-stage">
+        <!-- 主页面 -->
+        <div class="window" id="win-main">
+          <div class="win-title">
+            <svg class="ic" style="width:16px;height:16px"><use href="#i-mark"/></svg>
+            <span class="t">僚机 Wingman</span>
+            <div class="win-btns" aria-hidden="true"><i></i><i></i><i></i></div>
+          </div>
+          <div class="win-body">
+            <div class="brand">
+              <svg class="ic" style="width:34px;height:34px"><use href="#i-mark"/></svg>
+              <h1>僚机 Wingman</h1>
+              <button class="gear-btn push" type="button" aria-label="设置" title="设置" data-toast="展开设置菜单">
+                <svg class="ic"><use href="#i-gear"/></svg>
+              </button>
+            </div>
+
+            <div class="feature-list">
+              <div class="frow">
+                <svg class="ic ficon"><use href="#i-link"/></svg>
+                <span class="name" tabindex="0" data-tip="检测到游戏启动时自动拉起 MSI Afterburner（含 RTSS 监控），&#10;游戏退出后按配置一并关闭。切换即时生效。">小飞机关联启动</span>
+                <button class="switch" type="button" role="switch" aria-checked="true" aria-label="小飞机关联启动"></button>
+              </div>
+              <div class="frow">
+                <svg class="ic ficon"><use href="#i-shield"/></svg>
+                <span class="name" tabindex="0" data-tip="游戏运行中把 ACE 反作弊进程的 CPU / 磁盘 IO 降到最低优先级；&#10;退出后经四道闸门停服务、清残留。运行时限速 + 退出后清理，&#10;不写内存、不注入、不加载驱动，随时可还原。">ACE 防护</span>
+                <button class="switch" type="button" role="switch" aria-checked="true" aria-label="ACE 防护"></button>
+              </div>
+              <div class="frow">
+                <svg class="ic ficon"><use href="#i-block"/></svg>
+                <span class="name" tabindex="0" data-tip="DemoGame / WeGame 退出后弹出的直播窗口：会话期间窗口一露面就&#10;提前关闭，全退后再清理 ClientBrowser 后台进程树，避免常驻。">弹窗关闭</span>
+                <button class="switch" type="button" role="switch" aria-checked="true" aria-label="弹窗关闭"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 齿轮点开的浏览器式弹出菜单：贴右上角展开，覆盖式浮层 -->
+        <div class="menu-pop" id="win-settings" role="menu" aria-label="设置">
+          <div class="mrow" role="menuitem"><svg class="ic"><use href="#i-dot"/></svg><span class="t">守护状态</span><span class="hint" id="guard-status">运行中</span></div>
+          <div class="mrow" role="menuitem" data-status="运行中"><svg class="ic"><use href="#i-play"/></svg><span class="t">启动守护</span></div>
+          <div class="mrow" role="menuitem" data-status="已停止"><svg class="ic"><use href="#i-stop"/></svg><span class="t">停止守护</span></div>
+          <div class="mrow" role="menuitem"><svg class="ic"><use href="#i-boot"/></svg><span class="t">开机自动启动守护</span><button class="switch" type="button" role="switch" aria-checked="true" aria-label="开机自动启动守护"></button></div>
+
+          <div class="msep"></div>
+          <div class="mrow" role="menuitem" data-toast="已请求重扫游戏库"><svg class="ic"><use href="#i-rescan"/></svg><span class="t">重扫游戏库</span></div>
+          <div class="mrow" role="menuitem" data-toast="查看运行日志（设计稿预览）"><svg class="ic"><use href="#i-log"/></svg><span class="t">查看运行日志</span></div>
+          <div class="mrow" role="menuitem" data-toast="编辑配置文件（设计稿预览）"><svg class="ic"><use href="#i-cfg"/></svg><span class="t">编辑配置文件</span></div>
+
+          <div class="msep"></div>
+          <div class="mrow" role="menuitemradio" data-tseg="light" aria-pressed="true"><svg class="ic"><use href="#i-sun"/></svg><span class="t">纯白</span><svg class="ic mark"><use href="#i-check"/></svg></div>
+          <div class="mrow" role="menuitemradio" data-tseg="dark" aria-pressed="false"><svg class="ic"><use href="#i-moon"/></svg><span class="t">纯黑</span><svg class="ic mark" style="visibility:hidden"><use href="#i-check"/></svg></div>
+
+          <div class="msep"></div>
+          <div class="mrow" role="menuitem" data-toast="设置已保存 · 2 秒内自动生效"><svg class="ic"><use href="#i-check"/></svg><span class="t">保存设置</span></div>
+          <div class="mrow" role="menuitem" data-toast="关闭（设计稿预览）"><svg class="ic"><use href="#i-close"/></svg><span class="t">关闭</span><span class="hint">Esc</span></div>
+
+          <div class="mfoot">v1.2.0 · 开关即时生效</div>
+        </div>
+        </div>
+      </div>
+      <p class="note">说明：主页面严格只保留「名称 + 开关」，01/02/03 编号已删除；名称悬停显示反色简介，文案与 src/settings_gui.py 的 FEATURES 常量一致。右上角齿轮改为图标按钮（无边框，hover 才出底色）；二级设置不再是独立窗口，而是贴齿轮展开的浏览器式浮层：11 项各占一行，左侧线性图标、右侧状态/开关/勾选/Esc 提示，分组只用 1px 分隔线，点击外部或 Esc 收起。主题行与顶栏主题切换双向同步。</p>
+    </section>
+
+    <!-- ==================== 第二版：安装程序 ==================== -->
+    <section class="view" id="view-setup" role="tabpanel" aria-label="安装程序第二版预览">
+      <div class="section-head">
+        <h2>安装程序 · 第二版预览</h2>
+        <span>640 × 约 600 · 与设置面板同一套令牌 / 图标 / 开关 / 按钮 · 仅预览，未落地</span>
+      </div>
+      <p class="lead">安装向导改用与主程序一致的纯白 / 纯黑界面：同一枚盾形图标、同样的 1px 分隔线与反色主按钮，原生复选框换成 40×22 自绘开关，安装日志收进浅色面板。下方窗口可交互：切换主题、拨动开关、点击浏览与安装。</p>
+
+      <div class="canvas canvas--stack">
+        <!-- 安装向导 -->
+        <div class="window" id="win-setup">
+          <div class="win-title">
+            <svg class="ic" style="width:16px;height:16px"><use href="#i-mark"/></svg>
+            <span class="t">僚机 Wingman　安装</span>
+            <div class="win-btns" aria-hidden="true"><i></i><i></i><i></i></div>
+          </div>
+          <div class="win-body">
+            <div class="brand">
+              <svg class="ic" style="width:34px;height:34px"><use href="#i-mark"/></svg>
+              <h1>僚机 Wingman 安装</h1>
+              <span class="ver num">v1.3.0</span>
+            </div>
+            <p class="subtitle">小飞机关联启动 · ACE 防护 · 弹窗关闭</p>
+
+            <div class="set-group" style="margin-top:20px">
+              <span class="kicker">安装目录</span>
+              <div class="setup-dir">
+                <input class="input" type="text" value="C:\Program Files\Wingman" aria-label="安装目录">
+                <button class="btn" type="button" data-toast="浏览目录（设计稿预览）">浏览…</button>
+              </div>
+              <p class="note">单目录平铺：exe、运行库、config.json 与两枚图标同放一处；已有配置逐键保留，模板只补新增项。</p>
+            </div>
+
+            <div class="set-group">
+              <span class="kicker">选项</span>
+              <div class="optrow" style="margin-top:0">
+                <span class="label">开机自动启动守护（计划任务）</span>
+                <button class="switch" type="button" role="switch" aria-checked="true" aria-label="开机自动启动守护"></button>
+              </div>
+              <div class="optrow" style="margin-top:0">
+                <span class="label">安装完成后立即启动</span>
+                <button class="switch" type="button" role="switch" aria-checked="true" aria-label="安装完成后立即启动"></button>
+              </div>
+              <p class="note">小飞机：D:\Program Files\MSI Afterburner\MSIAfterburner.exe（自动探测）</p>
+            </div>
+
+            <div class="set-group">
+              <span class="kicker">安装过程</span>
+              <div class="setup-log mono">
+                <div>=== 安装 C:\Program Files\Wingman v1.3.0 ===</div>
+                <div>已解包 102 个文件到 C:\Program Files\Wingman</div>
+                <div>已保留原有 config.json 设置并补齐新增项</div>
+                <div>小飞机路径：D:\Program Files\MSI Afterburner\MSIAfterburner.exe</div>
+                <div>计划任务 Wingman：已创建</div>
+              </div>
+            </div>
+
+            <div class="actions">
+              <div class="btnrow">
+                <button class="btn btn--primary" type="button" data-tseg="light" aria-pressed="true">纯白</button>
+                <button class="btn" type="button" data-tseg="dark" aria-pressed="false">纯黑</button>
+                <span class="note grow" style="margin:0; align-self:center">v1.1.0 · 双主题</span>
+                <button class="btn" type="button" data-toast="退出（设计稿预览）">退出</button>
+                <button class="btn btn--primary" type="button" data-toast="开始安装（设计稿预览）">安装</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 完成态 -->
+        <div class="window" id="win-setup-done" style="width:640px">
+          <div class="win-title">
+            <svg class="ic" style="width:16px;height:16px"><use href="#i-mark"/></svg>
+            <span class="t">僚机 Wingman　安装</span>
+            <div class="win-btns" aria-hidden="true"><i></i><i></i><i></i></div>
+          </div>
+          <div class="win-body">
+            <div class="setup-done">
+              <svg class="ic"><use href="#i-shield"/></svg>
+              <div>
+                <h1 class="win-h1">安装完成</h1>
+                <p class="note" style="margin:6px 0 0">程序已装好，守护已启动。开始菜单里可打开「僚机 Wingman 设置」。</p>
+              </div>
+            </div>
+            <div class="setup-progress"><i style="width:100%"></i></div>
+            <div class="btnrow" style="margin-top:22px">
+              <span class="note" style="margin:0 auto 0 0; align-self:center">102 个文件 · 约 8.6 MB</span>
+              <button class="btn" type="button" data-toast="打开设置（设计稿预览）">打开设置</button>
+              <button class="btn btn--primary" type="button" data-toast="完成（设计稿预览）">完成</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">落地范围（本次不做）：installer/setup_abg.py 的 gui() 目前仍是 ttk 原生样式；第二版落地时改为 tk 原生 + Canvas 自绘开关与图标，复用 THEMES 令牌与 icon-light.ico / icon-dark.ico，并保持 /S /DIR= 静默参数、UAC 提权、配置合并与卸载逻辑不变。默认目录仍是 C:\Program Files\Wingman。</p>
+    </section>
+
+    <!-- ==================== 图标 ==================== -->
+    <section class="view" id="view-icons" role="tabpanel" aria-label="图标">
+      <div class="section-head"><h2>应用图标</h2><span>盾 = 守护，镂空上箭头 = 加力起飞 · 单色几何，无渐变、无描边风格混用</span></div>
+      <p class="lead">一个几何来源，两版反相输出。透明底 + currentColor，浅色界面用黑色图形，深色界面与深色任务栏用白色图形；16px 起可辨识。</p>
+
+      <div class="icon-hero">
+        <div class="icon-plate plate-light">
+          <svg class="ic" style="width:112px;height:112px"><use href="#i-mark"/></svg>
+          <span>纯白主题 · #000000 图形 · icon-light.ico</span>
+        </div>
+        <div class="icon-plate plate-dark">
+          <svg class="ic" style="width:112px;height:112px"><use href="#i-mark"/></svg>
+          <span>纯黑主题 · #FFFFFF 图形 · icon-dark.ico</span>
+        </div>
+      </div>
+
+      <div class="section" style="margin-top:32px">
+        <div class="section-head"><h2>尺寸降级</h2><span>16 / 24 / 32 / 48 / 64 / 128 / 256 全部由同一矢量重新栅格化，非位图缩放</span></div>
+        <div class="card">
+          <div class="sizes">
+            <div class="size-item"><div class="holder"><svg class="ic" style="width:16px;height:16px"><use href="#i-mark"/></svg></div><span class="lbl num">16 px</span></div>
+            <div class="size-item"><div class="holder"><svg class="ic" style="width:24px;height:24px"><use href="#i-mark"/></svg></div><span class="lbl num">24 px</span></div>
+            <div class="size-item"><div class="holder"><svg class="ic" style="width:32px;height:32px"><use href="#i-mark"/></svg></div><span class="lbl num">32 px</span></div>
+            <div class="size-item"><div class="holder"><svg class="ic" style="width:48px;height:48px"><use href="#i-mark"/></svg></div><span class="lbl num">48 px</span></div>
+            <div class="size-item"><div class="holder"><svg class="ic" style="width:64px;height:64px"><use href="#i-mark"/></svg></div><span class="lbl num">64 px</span></div>
+            <div class="size-item"><div class="holder"><svg class="ic" style="width:96px;height:96px"><use href="#i-mark"/></svg></div><span class="lbl num">128 px</span></div>
+          </div>
+        </div>
+        <p class="note">最小笔画 2.4 单位（24 网格）/ 6 单位（64 网格）；16px 下箭头负形仍有约 3px 有效宽度。</p>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>功能图标</h2><span>24 网格 · 实心几何 + 负形镂空 · 与应用图标同一视觉语言</span></div>
+        <div class="grid g3">
+          <div class="feature-card"><svg class="ic" style="width:40px;height:40px"><use href="#i-link"/></svg><div><b>小飞机关联启动</b><small>双向实心箭头 · feature-link.svg</small></div></div>
+          <div class="feature-card"><svg class="ic" style="width:40px;height:40px"><use href="#i-shield"/></svg><div><b>ACE 防护</b><small>实心盾 + 镂空勾 · feature-shield.svg</small></div></div>
+          <div class="feature-card"><svg class="ic" style="width:40px;height:40px"><use href="#i-block"/></svg><div><b>弹窗关闭</b><small>实心窗口 + 镂空斜杠 · feature-block.svg</small></div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>齿轮与菜单图标</h2><span>v2.2.0 · 24 网格线性图标 · 与功能图标同一单色语言</span></div>
+        <div class="grid g3">
+          <div class="feature-card"><svg class="ic" style="width:40px;height:40px"><use href="#i-gear"/></svg><div><b>设置入口</b><small>8 齿实心 + 镂空轴心 · 主页面右上角</small></div></div>
+          <div class="feature-card"><svg class="ic" style="width:40px;height:40px"><use href="#i-boot"/></svg><div><b>守护类</b><small>dot / play / stop / boot</small></div></div>
+          <div class="feature-card"><svg class="ic" style="width:40px;height:40px"><use href="#i-check"/></svg><div><b>外观与操作</b><small>sun / moon / check / close</small></div></div>
+        </div>
+        <p class="note">菜单图标统一 16px、--text-2 灰色，线宽 1.7 单位；齿轮按钮 20px、--fg 主色，hover 才出现 --hover 底色。生产实现见 src/settings_gui.py 的 Glyph.draw()。</p>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>几何与交付</h2><span>design/ 目录</span></div>
+        <div class="card" style="padding:0; overflow:hidden">
+          <table>
+            <thead><tr><th style="width:34%">文件</th><th>用途</th><th style="width:22%">规格</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">abg-mark.svg</td><td>矢量源，fill=currentColor，作为唯一几何来源</td><td>64 网格</td></tr>
+              <tr><td class="mono">icon-light.ico / icon-dark.ico</td><td>Windows 应用图标（exe、任务栏、快捷方式）</td><td>7 尺寸 PNG 条目</td></tr>
+              <tr><td class="mono">png/light-*.png / dark-*.png</td><td>托盘、安装包、文档等按尺寸直接取用</td><td>16~256，RGBA</td></tr>
+              <tr><td class="mono">feature-*.svg / feature-icons.svg</td><td>界面功能图标与并排预览稿</td><td>24 网格</td></tr>
+              <tr><td class="mono">generate_icons.py</td><td>零依赖生成脚本，改参数即可重出全套</td><td>4× 超采样</td></tr>
+              <tr><td class="mono">preview.png</td><td>双主题叠加校验图</td><td>820 × 360</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">使用约束：单色 currentColor、不得加彩色或渐变、不得拉伸变形、周围留 ≥ 图标宽度 1/8 的安全区；透明底版本不得直接放在同色背景上。</p>
+      </div>
+    </section>
+
+    <!-- ==================== 设计规范 ==================== -->
+    <section class="view" id="view-system" role="tabpanel" aria-label="设计规范">
+      <div class="section-head"><h2>设计系统</h2><span>令牌 → 组件 → 界面，单一来源 · 4px 基准间距 · WCAG AA 起</span></div>
+      <p class="lead">两套主题仅互换背景与前景（#FFFFFF ⇄ #000000），中性灰阶承担层级。所有语义色一律用反相表达，不引入品牌彩色，保证纯白 / 纯黑的绝对一致。</p>
+
+      <div class="section">
+        <div class="section-head"><h2>颜色令牌</h2><span>色值均为 R=G=B 的中性灰</span></div>
+        <div class="card" style="padding:0; overflow:hidden">
+          <table>
+            <thead><tr><th style="width:20%">Token</th><th style="width:18%">纯白主题</th><th style="width:18%">纯黑主题</th><th>用途</th><th style="width:16%">对比度</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">--bg</td><td><span class="swatch" style="background:#FFFFFF"></span>#FFFFFF</td><td><span class="swatch" style="background:#000000"></span>#000000</td><td>页面 / 窗口 / 卡片背景</td><td>基底</td></tr>
+              <tr><td class="mono">--fg</td><td><span class="swatch" style="background:#000000"></span>#000000</td><td><span class="swatch" style="background:#FFFFFF"></span>#FFFFFF</td><td>正文、图标、开关开启态</td><td><span class="badge badge--ok">21.00:1 AAA</span></td></tr>
+              <tr><td class="mono">--text-2</td><td><span class="swatch" style="background:#595959"></span>#595959</td><td><span class="swatch" style="background:#B3B3B3"></span>#B3B3B3</td><td>副标题、状态、说明</td><td><span class="badge badge--ok">7.00 / 10.02:1 AAA</span></td></tr>
+              <tr><td class="mono">--text-3</td><td><span class="swatch" style="background:#767676"></span>#767676</td><td><span class="swatch" style="background:#8C8C8C"></span>#8C8C8C</td><td>编号、辅助信息、占位符</td><td><span class="badge badge--ok">4.54 / 6.25:1 AA</span></td></tr>
+              <tr><td class="mono">--border</td><td><span class="swatch" style="background:#767676"></span>#767676</td><td><span class="swatch" style="background:#8C8C8C"></span>#8C8C8C</td><td>按钮 / 输入框 / 开关轨道边界</td><td><span class="badge badge--ok">4.54 / 6.25:1</span></td></tr>
+              <tr><td class="mono">--line</td><td><span class="swatch" style="background:#E5E5E5"></span>#E5E5E5</td><td><span class="swatch" style="background:#2A2A2A"></span>#2A2A2A</td><td>纯装饰分隔线</td><td>装饰，非组件边界</td></tr>
+              <tr><td class="mono">--hover / --active</td><td class="mono">#F5F5F5 / #EBEBEB</td><td class="mono">#141414 / #202020</td><td>交互反馈背景</td><td>不承载文字</td></tr>
+              <tr><td class="mono">--inverse</td><td class="mono">#000000</td><td class="mono">#FFFFFF</td><td>主按钮 / Toast / 选中态反相</td><td><span class="badge badge--ok">21.00:1</span></td></tr>
+              <tr><td class="mono">--focus</td><td class="mono">#000000</td><td class="mono">#FFFFFF</td><td>2px 焦点环 + 2px 偏移</td><td><span class="badge badge--ok">21.00:1</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">装饰线与禁用态对比度低于 3:1 属合规：WCAG 1.4.11 的「非文本对比」要求针对可交互组件边界与状态指示，纯装饰分隔线与 inactive 控件豁免。组件边界已用 --border 达标。</p>
+      </div>
+
+      <div class="grid g2 section">
+        <div class="card">
+          <p class="kicker">Typography</p>
+          <h3>字阶与字重</h3>
+          <div style="margin-top:14px">
+            <div class="scale-row"><span class="px num">20 / 600</span><span class="sample" style="font-size:20px;font-weight:600;line-height:1.25">窗口标题</span><span class="use">品牌区 h1</span></div>
+            <div class="scale-row"><span class="px num">16 / 600</span><span class="sample" style="font-size:16px;font-weight:600">功能名称</span><span class="use">三个功能行</span></div>
+            <div class="scale-row"><span class="px num">14 / 500</span><span class="sample" style="font-size:14px;font-weight:500">按钮文字</span><span class="use">按钮 / 输入</span></div>
+            <div class="scale-row"><span class="px num">13 / 400</span><span class="sample" style="font-size:13px">副标题、说明</span><span class="use">--text-2</span></div>
+            <div class="scale-row"><span class="px num">12 / 400</span><span class="sample" style="font-size:12px">编号、状态、辅助信息</span><span class="use">--text-3</span></div>
+            <div class="scale-row"><span class="px num">11 / 400</span><span class="sample" style="font-size:11px;letter-spacing:.06em">分组标签</span><span class="use">大写 / 字距</span></div>
+          </div>
+          <p class="cap">Segoe UI → Microsoft YaHei UI → system-ui 回退；正文行高 1.5，标题 1.25；标题字距 -0.02em；数字统一 tabular-nums。</p>
+        </div>
+        <div class="card">
+          <p class="kicker">Spacing</p>
+          <h3>4px 基准间距</h3>
+          <div style="margin-top:14px">
+            <div class="space-row"><span class="lbl num">4 px</span><span class="space-bar" style="width:4px"></span></div>
+            <div class="space-row"><span class="lbl num">8 px</span><span class="space-bar" style="width:8px"></span></div>
+            <div class="space-row"><span class="lbl num">12 px</span><span class="space-bar" style="width:12px"></span></div>
+            <div class="space-row"><span class="lbl num">16 px</span><span class="space-bar" style="width:16px"></span></div>
+            <div class="space-row"><span class="lbl num">20 px</span><span class="space-bar" style="width:20px"></span></div>
+            <div class="space-row"><span class="lbl num">24 px</span><span class="space-bar" style="width:24px"></span></div>
+            <div class="space-row"><span class="lbl num">32 px</span><span class="space-bar" style="width:32px"></span></div>
+          </div>
+          <p class="cap">窗口内边距 32 / 28 · 功能行高 58 · 行间距 8 · 区块间距 22~24 · 卡片内边距 20 · 按钮高度 36（点击区 ≥44 由留白保证）。</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>组件状态</h2><span>所有交互态只用反相、透明度与 1px 边框表达</span></div>
+        <div class="grid g2">
+          <div class="card">
+            <p class="kicker">Switch · role="switch"</p>
+            <div class="states" style="margin-top:18px">
+              <div class="state-item"><span>关闭</span><button class="switch" type="button" role="switch" aria-checked="false" aria-label="示例：关闭"></button></div>
+              <div class="state-item"><span>开启</span><button class="switch" type="button" role="switch" aria-checked="true" aria-label="示例：开启"></button></div>
+              <div class="state-item"><span>禁用</span><button class="switch" type="button" role="switch" aria-checked="false" disabled aria-label="示例：禁用"></button></div>
+            </div>
+            <p class="cap">轨道 40 × 22 / 1.5px 边框 / 滑块 14 · 点击区 44 × 44 · 开启态轨道 --fg、滑块 --bg · 过渡 180ms。</p>
+          </div>
+          <div class="card">
+            <p class="kicker">Button · 36px 高 / 4px 圆角</p>
+            <div class="states" style="margin-top:18px">
+              <div class="state-item"><span>主要</span><button class="btn btn--primary" type="button">保存设置</button></div>
+              <div class="state-item"><span>次要</span><button class="btn" type="button">启动守护</button></div>
+              <div class="state-item"><span>禁用</span><button class="btn" type="button" disabled>停止守护</button></div>
+            </div>
+            <p class="cap">Hover 用 --hover 背景；主要按钮 hover 用 0.82 透明度保持纯色；Focus-visible 为 2px --focus 环 + 2px 偏移。</p>
+          </div>
+        </div>
+        <div class="grid g2" style="margin-top:16px">
+          <div class="card">
+            <p class="kicker">Input</p>
+            <div style="display:flex; flex-direction:column; gap:10px; margin-top:14px">
+              <input class="input" placeholder="安装目录 / 默认" aria-label="输入框默认态">
+              <input class="input" placeholder="禁用态" disabled aria-label="输入框禁用态">
+            </div>
+            <p class="cap">1px --border / 4px 圆角 / 聚焦 2px 焦点环；占位符用 --text-3（4.54:1）。</p>
+          </div>
+          <div class="card">
+            <p class="kicker">Shape &amp; Motion</p>
+            <div style="margin-top:14px; font-size:13px; line-height:2; color:var(--text-2)">
+              圆角：按钮 / 输入 4px · 卡片 6px · 窗口 8px · 开关 999px<br>
+              描边：分隔线 1px · 组件 1px · 开关 1.5px · 焦点 2px<br>
+              动效：150ms 常规反馈 · 180ms 开关 · easing ease<br>
+              降级：prefers-reduced-motion 时全部收敛到 0.01ms
+            </div>
+            <p class="cap">不使用位移动画、彩色阴影、玻璃拟态或品牌渐变，保证两套主题像素级对称。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>无障碍</h2><span>WCAG 2.1 AA 最低要求，正文实际达 AAA</span></div>
+        <div class="card" style="padding:0; overflow:hidden">
+          <table>
+            <thead><tr><th style="width:26%">项目</th><th>规格</th><th style="width:24%">实测</th></tr></thead>
+            <tbody>
+              <tr><td>正文对比度</td><td>正常文本 ≥ 4.5:1</td><td><span class="badge badge--ok">21.00:1 双主题</span></td></tr>
+              <tr><td>次级文本</td><td>正常文本 ≥ 4.5:1</td><td><span class="badge badge--ok">7.00 / 10.02:1</span></td></tr>
+              <tr><td>三级文本</td><td>正常文本 ≥ 4.5:1</td><td><span class="badge badge--ok">4.54 / 6.25:1</span></td></tr>
+              <tr><td>组件边界（1.4.11）</td><td>非文本 ≥ 3:1</td><td><span class="badge badge--ok">4.54 / 6.25:1</span></td></tr>
+              <tr><td>焦点可见性</td><td>2px 实线环 + 2px 偏移，键盘可见</td><td><span class="badge badge--ok">21.00:1</span></td></tr>
+              <tr><td>触控目标</td><td>≥ 44 × 44 CSS px</td><td><span class="badge badge--ok">开关 44 × 44</span></td></tr>
+              <tr><td>键盘与语义</td><td>原生 button + role=switch + aria-checked，Tab 顺序即视觉顺序</td><td><span class="badge badge--ok">Space / Enter 可用</span></td></tr>
+              <tr><td>动效敏感</td><td>prefers-reduced-motion: reduce 关闭过渡</td><td><span class="badge badge--ok">已实现</span></td></tr>
+              <tr><td>文本缩放</td><td>布局用 flex / 无固定行高，200% 缩放不裁切</td><td><span class="badge badge--ok">已实现</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Tkinter 落地映射</h2><span>令牌到 tk 原生控件 / Canvas 自绘的对应，改配色不需动布局计算</span></div>
+        <div class="card" style="padding:0; overflow:hidden">
+          <table>
+            <thead><tr><th style="width:24%">令牌</th><th style="width:34%">Tk 目标</th><th>落地值</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">--bg / --fg</td><td class="mono">root / tk.Frame / tk.Label</td><td class="mono">background=#FFFFFF / #000000, foreground=#000000 / #FFFFFF</td></tr>
+              <tr><td class="mono">--text-2</td><td class="mono">菜单项线性图标</td><td class="mono">Glyph ink=#595959 / #B3B3B3，16px</td></tr>
+              <tr><td class="mono">--text-3</td><td class="mono">菜单右侧提示、版本小字</td><td class="mono">foreground=#767676 / #8C8C8C（编号已删除）</td></tr>
+              <tr><td class="mono">--inverse</td><td class="mono">Switch 开启态 / ToolTip 反色块</td><td class="mono">轨道=inv、滑块=invfg；tipbg / tipfg；主页面无原生按钮</td></tr>
+              <tr><td class="mono">--border</td><td class="mono">Switch 关闭态 / 菜单浮层外框</td><td class="mono">Canvas outline=border、width=px(1)；浮层外框 1px --line</td></tr>
+              <tr><td class="mono">--line</td><td class="mono">1px tk.Frame 分隔线</td><td class="mono">background=#E5E5E5 / #2A2A2A</td></tr>
+              <tr><td class="mono">字阶 15 / 600</td><td class="mono">f_head（功能名称 tk.Label）</td><td class="mono">tkfont.Font(weight='bold'), size=-px(15)</td></tr>
+              <tr><td class="mono">字阶 18 / 600</td><td class="mono">f_title（品牌 / 设置标题）</td><td class="mono">size=-px(18)，负数保持像素尺寸随 DPI 等比</td></tr>
+              <tr><td class="mono">40 × 22 开关</td><td class="mono">Switch(tk.Canvas) 自绘</td><td class="mono">ttk 原生 Checkbutton 会露系统白底，已替换为 Canvas</td></tr>
+              <tr><td class="mono">功能图标</td><td class="mono">Glyph(tk.Canvas) 自绘</td><td class="mono">mark / link / shield / block + gear + 11 枚菜单线性图标，镂空用当前背景色</td></tr>
+              <tr><td class="mono">齿轮按钮</td><td class="mono">Glyph('gear') + ButtonRelease-1</td><td class="mono">20px、无边框、hover 出 --hover 底色；再点一次收起</td></tr>
+              <tr><td class="mono">浏览器式弹出菜单</td><td class="mono">overrideredirect Toplevel + Canvas</td><td class="mono">topmost、1px 边框、贴齿轮右下方、空间不足向上弹、超高用滚轮；不用 transient（会被 owner 盖住）</td></tr>
+              <tr><td class="mono">点击外部收起</td><td class="mono">root Button-1 / Esc / GetAsyncKeyState</td><td class="mono">全局左键在新按下瞬间判位置，跨进程点击其它程序同样生效；齿轮区域豁免</td></tr>
+              <tr><td class="mono">悬停简介</td><td class="mono">ToolTip（overrideredirect Toplevel）</td><td class="mono">320ms 延迟、反色块、wraplength=px(320)</td></tr>
+              <tr><td class="mono">菜单项逐行</td><td class="mono">App.menu_row() + pack(fill='x')</td><td class="mono">11 行各占一行：图标 + 名称 + 右侧状态/开关/勾选/Esc；分组 1px 线；悬停整行高亮</td></tr>
+              <tr><td class="mono">应用图标</td><td class="mono">root.iconbitmap / spec 的 icon= / WM_SETICON</td><td class="mono">exe 内嵌 7 尺寸；窗口显式设 ICON_SMALL + ICON_BIG，任务管理器与任务栏预览取设计图标</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note">已落地（2026-11-09，v2.2.0）：src/settings_gui.py 全部改用 tk 原生控件 + Canvas 自绘开关与图标，避免 ttk 主题在纯黑下画出系统白底；切主题走 rebuild() 重建主页面与菜单。右上角改齿轮，二级设置改浏览器式浮层菜单（11 项逐行、点击外部收起），并显式设置窗口大小图标。apply_dpi() / resize_fonts() / relayout() 与 --layout-check 六档 DPI（96~240）同时检查主页面与菜单浮层，overflow=0、in_area=True。安装程序 UI 仍只出预览、未落地。</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <span>僚机 Wingman · UI Design System v2.2.0 · 齿轮 + 浏览器式弹出菜单 + 安装程序第二版预览 · 纯白 / 纯黑双主题 · 单文件离线设计稿</span>
+    <span>设计令牌唯一来源 · WCAG 2.1 AA · 4px 基准间距</span>
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  var body = document.body;
+
+  // ---- 主题 ----
+  var themeBtns = document.querySelectorAll('[data-theme]');
+  var tseg = document.querySelectorAll('[data-tseg]');
+  function syncTseg(t){
+    tseg.forEach(function(b){
+      var on = b.getAttribute('data-tseg') === t;
+      // 按钮用反相，菜单行只切右侧勾选的可见性，不给整行加黑底
+      if (b.classList.contains('btn')) b.classList.toggle('btn--primary', on);
+      var mk = b.querySelector('.mark');
+      if (mk) mk.style.visibility = on ? 'visible' : 'hidden';
+      b.setAttribute('aria-pressed', String(on));
+    });
+  }
+  function setTheme(t){
+    body.setAttribute('data-theme', t);
+    themeBtns.forEach(function(b){
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-theme') === t));
+    });
+    syncTseg(t);
+    try { localStorage.setItem('abg-theme', t); } catch(e) {}
+  }
+  themeBtns.forEach(function(b){
+    b.addEventListener('click', function(){ setTheme(b.getAttribute('data-theme')); });
+  });
+  // 齿轮菜单里的「纯白 / 纯黑」与顶栏主题切换双向同步
+  tseg.forEach(function(b){
+    b.addEventListener('click', function(){ setTheme(b.getAttribute('data-tseg')); });
+  });
+  try {
+    var saved = localStorage.getItem('abg-theme');
+    if (saved === 'dark' || saved === 'light') setTheme(saved);
+  } catch(e) {}
+  // 直达链接：?theme=dark&view=icons / ?view=system
+  var q = new URLSearchParams(location.search);
+  var qt = q.get('theme');
+  if (qt === 'dark' || qt === 'light') setTheme(qt);
+
+  // ---- 视图 ----
+  var viewBtns = document.querySelectorAll('[data-view]');
+  function setView(v){
+    viewBtns.forEach(function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-view') === v)); });
+    document.querySelectorAll('.view').forEach(function(s){
+      s.classList.toggle('active', s.id === 'view-' + v);
+    });
+  }
+  viewBtns.forEach(function(b){
+    b.addEventListener('click', function(){ setView(b.getAttribute('data-view')); });
+  });
+  var qv = q.get('view');
+  if (qv === 'ui' || qv === 'setup' || qv === 'icons' || qv === 'system') setView(qv);
+
+  // ---- 开关 ----
+  var switches = document.querySelectorAll('.switch:not([disabled])');
+  function countOn(){
+    var n = 0;
+    document.querySelectorAll('#view-ui .switch').forEach(function(s){
+      if (s.getAttribute('aria-checked') === 'true') n++;
+    });
+    var el = document.getElementById('on-count');
+    if (el) el.textContent = String(Math.max(0, n - 1)); // 不含「开机自启」项
+  }
+  switches.forEach(function(s){
+    s.addEventListener('click', function(){
+      if (s.disabled) return;
+      s.setAttribute('aria-checked',
+        String(s.getAttribute('aria-checked') !== 'true'));
+      countOn();
+    });
+  });
+  countOn();
+
+  // ---- 按钮反馈 ----
+  var toast = document.getElementById('toast'), timer = null;
+  function showToast(msg){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(timer);
+    timer = setTimeout(function(){ toast.classList.remove('show'); }, 2200);
+  }
+  document.querySelectorAll('[data-toast]').forEach(function(b){
+    b.addEventListener('click', function(){ showToast(b.getAttribute('data-toast')); });
+  });
+  document.querySelectorAll('[data-status]').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.getElementById('guard-status').textContent = b.getAttribute('data-status');
+      showToast('守护状态已更新（设计稿预览）');
+    });
+  });
+})();
+</script>
+</body>
+</html>

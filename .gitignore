@@ -1,0 +1,46 @@
+# 运行产物（onedir 打包结果、生产安装目录）
+app/
+dist/
+_build/
+installer/dist/
+installer/_build/
+installer/payload.zip
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 运行时数据
+*.log
+*.log.*
+*.pid
+stop.flag
+rescan_games.flag
+plugins_reload.flag
+.wingman-write-test
+.plugin-staging-*/
+ace_state.json
+plugins_state.json
+games_cache.json
+self_test.txt
+self_test_run.log
+_build_log.txt
+_setup_log.txt
+layout_check.txt
+settings_selfcheck.txt
+config.json.bak
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# 调试截图（十几 MB 的位图，不进仓库）
+test/*.bmp
+
+# 历史发版产物 / 设计过程截图（体积大、含本机数据，不进仓库）
+releases/
+design/shots/
+src/games_cache.json

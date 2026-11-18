@@ -1,0 +1,715 @@
+# WBOX
+
+Windows 游戏辅助守护：开游戏自动拉起 MSI Afterburner，压住反作弊组件的资源占用，
+顺手关掉游戏退出后弹出的广告窗口。常驻托盘，只做进程调度，不碰任何游戏或反作弊文件。
+
+> 显示名自 v2.10.0 起统一为 **WBOX**（原「僚机 Wingman」）；v2.11.0 起系统标识
+> （exe 文件名、安装目录、计划任务、注册表键、心跳管道/互斥体、备份区）也
+> 统一 WBOX，旧 Wingman 安装由安装器自动迁移。
+
+## 它做三件事
+
+**1. 小飞机关联启动**
+检测到游戏进程就让 MSI Afterburner 起来，游戏全部退出后按配置优雅关闭（托盘化不退出时强制结束），
+连同 RTSS 及其 EncoderServer / HooksLoader 一起清干净。
+
+**2. ACE 限速**
+把 `SGuard64` / `SGuardSvc64` / `ACE-Service64` 的 CPU 优先级降到空闲、磁盘 IO 降到 very-low，
+改完读回校验。退出后按四道闸门决定是否停掉残留服务：
+
+| 闸门 | 默认值 | 作用 |
+|---|---|---|
+| 宽限期 | 180 秒 | 游戏退出后先等等，防止切局误判 |
+| ACE 保护期 | 300 秒 | 刚启动的 ACE 不动，避免打断初始化 |
+| 更新后静默 | 30 秒 | 见到 `SGuardUpdate64` 就跳过本轮 |
+| 冷却期 | 600 秒 | 两次清理之间的最小间隔 |
+
+**3. 弹窗拦截**
+游戏会话中一旦出现 `ClientBrowser.exe` 的窗口，立刻发 WM_CLOSE，不等游戏进程完全退出；
+全部退出后清理宿主进程树，并在随后 90 秒内继续拦截复活的新窗口。
+QQ / 微信 / TIM 等常驻进程在保护名单里，不会被误伤。
+
+## 安装
+
+1. 下载 `Setup_WBOX.exe`
+2. 双击安装，默认装到 `C:\Program Files\WBOX`
+3. 首次运行会请求管理员权限（改进程优先级、注册计划任务都需要）
+
+支持静默安装：
+
+```
+Setup_WBOX.exe /S /DIR="D:\Tools\WBOX" /AUTO=1 /LAUNCH=1
+```
+
+| 参数 | 说明 |
+|---|---|
+| `/S` | 静默 |
+| `/DIR=` | 安装目录 |
+| `/AUTO=1` | 开机自启（登录时计划任务） |
+| `/LAUNCH=1` | 装完立即启动守护 |
+| `/NOTASK` | 不创建计划任务 |
+| `/UNINSTALL` | 走卸载流程（**卸载必须带这个参数**） |
+
+## 使用
+
+窗口左上角字标 **WBOX** 就是菜单入口；开启「启动后收进托盘」后，关窗收进托盘，
+托盘左键叫回窗口、右键菜单「打开设置 / 退出」：
+
+- 主页每行一个插件功能开关；行尾滑块打开设置浮层，「卸载此插件」在浮层底部
+- 菜单：守护状态 / 启动 / 停止守护、开机自启、启动后收进托盘、游戏结束提示、
+  重新扫描游戏、查看日志、编辑配置文件、外观与皮肤…、插件开发指南等
+- 守护状态：看当前 pid、会话状态、只读提示
+
+装到 `Program Files` 时普通权限写不了配置，程序会自动提权重开一次；
+用户拒绝 UAC 时界面整体置灰，不会崩。
+
+日志在安装目录的 `guard.log`，按 `YYYY-MM-DD HH:MM:SS` 逐行记录，单文件超过上限自动轮转。
+
+## 从源码构建
+
+需要 Python 3.8（带 tkinter）、PyInstaller 5.13.2。
+
+```
+build_exe.bat                                   # 主程序 -> app\
+python installer\build_setup.py                 # 安装包 -> installer\dist\Setup_WBOX.exe
+```
+
+`build_exe.bat` 支持 `OUTDIR`：`set OUTDIR=D:\06-Temp\wbox\app` 后再跑，就把产物打到临时目录，
+不会覆盖正在运行的 `app\`。**v2.11.3 起主程序不带任何插件**：构建会把 `%OUTDIR%\plugins\`
+清掉，`build_setup.py` 也会在 payload 里发现 `plugins/` 条目时直接拒绝打包。
+
+`installer\build_setup.py` 同样支持临时目录：`ABG_APP`（payload 取哪个 app 目录）、
+`ABG_PAYLOAD`（payload.zip 落点）、`ABG_OUT`（setup exe 与中间目录的根），
+`--payload-only` 则只重打 payload.zip。
+
+**v2.1.1 瘦身**：`Setup_WBOX.exe` 本身是 PyInstaller onefile，运行时已有全套
+Python / Tcl 运行时；`payload.zip` 不再重复携带这 9 个二进制与 `tcl\` `tk\` 数据，
+改由安装器从自己的 `_MEIPASS` 复制到目标目录，清单写在 payload 的
+`.wbox-shared-runtime` 里。构建结束会逐项 md5 比对安装器内嵌副本与 `app\` 原文件，
+不一致直接判失败并删掉产物。因此 **payload.zip 不能单独解包当程序用**，必须走
+`Setup_WBOX.exe`。`base_library.zip` 两侧生成内容不同，仍留在 payload 里：
+分发时转成 STORED 让外层 deflate 压到 307 KB，安装后再重压成 DEFLATE 省一半磁盘。
+
+两个 spec 的 `EXCLUDES` 只保留 `tkinter.test` / `tkinter.tix`，其余 tkinter 子模块必须显式写进
+`hiddenimports`。PyInstaller 的 modulegraph 抓不到函数体里的 `from tkinter import ...`，
+漏了会在 GUI 安装路径崩在 `ModuleNotFoundError: tkinter.simpledialog`。
+
+插件内核同理：v2.0.0 起 `guard_core` 不再静态 import `ace_native` / `popup_guard`，
+插件在运行时用 `ctx.import_core()` 动态取，所以 `abg.spec` 的 `hiddenimports` 里必须带上
+`plugin_api / plugin_host / plugin_package / core_defaults / ace_native / popup_guard / game_lib`，
+少一个就是"平时能开、一打游戏就 ModuleNotFoundError"。
+
+## 插件
+
+**主程序不带插件。** 装好 WBOX 是一个空面板，功能插件从官方插件仓库单独下载：
+
+> **插件仓库：<https://github.com/qinchangsheng123/wbox-plugins>**
+> 面板齿轮菜单里的「浏览插件库」直接打开它，空面板上也有「插件库」按钮。
+
+面板与守护的功能清单都来自 `plugins\<id>\plugin.json`，不再写死在代码里：
+
+- **加插件**：从插件仓库下载 `dist\<id>-v<版本>.zip`，点标题栏字标旁边的「＋」安装；
+  校验通过后自动生效，守护 2 秒内热重载（游戏会话中会等本局结束，不打断 ACE 限速 /
+  弹窗监视）；
+- **删插件**：点行尾滑块打开设置浮层，底部「卸载此插件」，确认后目录移进备份区
+  （不硬删），面板那一行随之消失；
+- 菜单的「已安装插件」分组显示版本与状态（正常 / 运行异常 N 次 / 加载失败 /
+  需要更新的内核 / ID 冲突），点一行可直接打开该插件目录；
+- 升级安装会原样保留已装插件（整目录暂存后还原），卸载会把它们备份到
+  `%LOCALAPPDATA%\WBOX\removed-plugins-<时间戳>\`。
+
+### 插件包规范 `wingman-plugin-zip-v1`
+
+统一用 **zip 包**分发，不再手工拷目录。结构（顶层目录名必须等于 `manifest.id`）：
+
+```
+<id>-vX.Y.Z.zip
+  └─ <id>/plugin.json       必填：id / name / version / api（≤ 1）
+     <id>/plugin.py         默认入口，可用 manifest.entry 改
+     <id>/...               其它源码 / 说明 / 小图标
+```
+
+- 允许的文件类型：`.py .json .md .txt .cfg .ini .yaml .yml .csv .xml .png .ico`；
+  可执行文件（`.exe/.dll/.pyd/.bat/.cmd/.ps1/.vbs/.lnk` 等）一律拒绝；
+- 拒绝多顶层目录、路径穿越、绝对路径、盘符、符号链接、加密条目、zip bomb
+  （文件数 ≤ 64、单文件 ≤ 1 MB、解压总量 ≤ 2 MB、包 ≤ 8 MB）；
+- 校验分两步：先只读 `inspect_zip()`，落盘到暂存区后再走一遍宿主的
+  `parse_manifest()`，保证「面板装得上、守护就一定加载得起来」；任何失败都不留半成品；
+- 覆盖安装会先把旧目录备份到 `%LOCALAPPDATA%\WBOX\replaced-plugins-<时间戳>\`。
+
+生成规范包的工具在插件仓库（`wbox-plugins\tools\pack.py`），主程序仓库不再带打包脚本：
+
+```
+python tools\pack.py                     # 打包全部插件 -> dist\
+python tools\pack.py plugins\myplugin    # 打包指定插件
+python tools\pack.py --check <file.zip>  # 只校验不安装
+```
+
+### 官方插件
+
+五个官方插件都在 [wbox-plugins](https://github.com/qinchangsheng123/wbox-plugins)
+仓库里单独演进、单独发版；主程序只负责加载。
+
+| id | 功能 | 说明 |
+|---|---|---|
+| `afterburner` | 小飞机关联启动 | 游戏启动拉起 MSI Afterburner / RTSS，退出后只关本局新起的 |
+| `gamepp` | 游戏加加联动 | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表） |
+| `ace` | ACE 防护 | 游戏期间限速 + 退出后按四道闸门清残留 |
+| `popup` | 弹窗关闭 | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树 |
+| `desktop_hud` | 桌面监控悬浮窗 | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
+
+## 测试
+
+```
+python test\test_ace_state.py
+python test\test_popup_guard.py
+python test\test_throttle_state.py
+python test\test_setup_args.py
+python test\test_early_count.py
+python test\test_gear_menu.py
+python test\test_quiet_gate.py
+python test\test_plugin_manifest.py
+python test\test_plugin_discovery.py
+python test\test_plugin_isolation.py
+python test\test_plugin_empty.py
+python test\test_plugin_hooks.py
+python test\test_plugin_retry_close.py
+python test\test_plugin_gui.py
+python test\test_plugin_gui_overflow.py
+python test\test_plugin_package.py
+python test\test_gamepp_plugin.py
+python test\test_plugin_actions.py
+python test\test_setup_gui.py
+python test\test_skin_panel.py
+python test\test_tray_live.py
+python test\test_ui_copy_keyboard.py
+python test\test_ui_motion.py
+python test\test_qa_*.py
+```
+
+## 版本
+
+**v2.11.3**（2026-11-18）
+
+本版按审查意见收口四件事，全部围绕"用户能不能判断 / 出了问题能不能自己好"：
+
+- **插件信任边界摆到明面上**：`plugin.json` 新增 `publisher` / `homepage` /
+  `permissions`（`src/plugin_host.py` 解析，只展示不授权）。面板「＋」装包时
+  先弹一屏来源确认：发布者（官方 / 第三方 / 来源不明三种措辞）、来源链接、
+  声明权限翻成人话（词表见 `plugin_package.PERMISSION_LABELS`）、文件数与体积、
+  整包 SHA-256、包完整性，末尾一句"安装即等于完全信任作者"。`pack_plugin`
+  同时产出 `.sha256` 侧车；侧车存在且不一致时**拒绝安装**（包被替换/传坏）。
+  侧车不是签名，界面措辞不夸大。插件浮层底部也补了一行发布者 / 权限。
+- **安装被打断能自愈**：`install_zip` 换入前写 `.plugin-install.json` 事务日志，
+  异常就地回滚；新增 `recover()`，守护启动（`Guard()` 之前）与面板启动时各调一次：
+  目标缺失有备份就搬回，没备份但暂存完整就补完，坏日志/孤儿暂存目录一并清掉。
+  判定只看文件系统现状，不信日志里的 state（崩溃点可能落在两次写日志之间）。
+- **进程事件可诊断、可自恢复**：`proc_events` 每次失败记**阶段名 + HRESULT**，
+  `describe_hr()` 翻成一句人话（WMI 服务未启动 / 拒绝访问 / RPC 不可用…）。
+  订阅失败不再"一次失败永久轮询"：60s 起、600s 封顶退避重订阅，WMI 服务回来
+  自动恢复事件模式；`Next` 连续硬失败重建枚举器。新增 `status()` 供心跳上报。
+- **"进程在"与"全功能在"分开说**：心跳 payload 增 `events` / `health` 两个只增
+  字段；事件降级时状态行显示「运行中 · 空闲待命 · 轮询兜底」，设置页新增
+  「进程事件」「插件健康」两行 + 原因说明（含已唤醒次数）。旧版守护没有这些
+  字段时按老文案显示，不误报降级。
+- **顺带修一个真 bug**：`run()` 里看门狗的启动条件写成 `ev is not None and ev.ok`，
+  但订阅是后台线程建立的、那一刻 `ok` 必为 False —— 看门狗从来没起来过。
+  退避重订阅成功、等待放宽到 30s 后，「停止守护」最多要等半分钟。现在挂着
+  `ev` 就起（看门狗只做 stat + SetEvent，与订阅状态无关）。
+- **本体与插件分仓**：本版起主程序**不再附带任何插件**（`build_exe.bat` 清空
+  `%OUTDIR%\plugins\`，`build_setup.py` 见到 `plugins/` 条目直接拒绝打包，
+  `uninstall_core.BUILTIN_PLUGINS` 改为空集）。五个官方插件迁到独立仓库
+  [wbox-plugins](https://github.com/qinchangsheng123/wbox-plugins) 单独发版；
+  面板新增「浏览插件库」，空面板给出"从插件库下载后安装"的引导。
+  升级安装仍会整目录暂存并原样还原已装插件，卸载仍整份备份。
+- **仓库脱敏**：删掉几张整屏截图（含桌面背景 / 其它窗口 / 头像），测试与设计稿里的
+  本机绝对路径换成中性示例（`<安装盘>:\...`、`<游戏盘>:\WeGameApps\DemoGame\...`），
+  源码注释与文档里的具体游戏名、活动页地址改为通用说法。
+- 测试：`test_plugin_package.py` 新增 22 项（信任边界 / 完整性 13 + 中断恢复 9）、
+  `test_proc_events.py` 新增 11 项（诊断 / status / 重订阅）、
+  `test_guard_beat.py` 新增 8 项（降级文案与旧版兼容）；
+  `test_qa_build_setup_guard.py` 的 payload 断言改为"0 个插件"。
+  插件相关用例通过 `test/_plugin_src.py` 定位同级检出的插件仓库，找不到时打印
+  跳过原因并以 0 退出（跳过会在输出里写明，不伪装成通过）。
+
+**v2.11.2**（2026-11-18）
+
+本版修用户实测发现的「任务栏 / 通知区都没有 WBOX」（截图红圈），并修两处
+随之暴露的回归：
+
+- **任务栏按钮**：根因是 overrideredirect 的 wrapper 在 map 时才被 Tk 创建并带
+  `WS_EX_TOOLWINDOW`，init 期加的 `WS_EX_APPWINDOW` 落在客户区子窗口上；且可见
+  路径 shell 在 wrapper 首次 show 时就按 TOOLWINDOW 缓存排除决定（外部
+  hide/show 对照截图实证，`evidence\deploy_fulltb*.png`）。现 pre-map 补位 +
+  `<Map>` 钩子对 wrapper 清 TOOL / 加 APP 并 hide/show 刷新一次。刷新会清键盘
+  焦点（焦点 None 时 Tk 丢弃键事件、菜单 Esc 全链路失效，齿轮菜单回归曾因此
+  红），故刷新前记焦点、刷新后 `focus_force` 回填（`focus_set` 在非前景进程
+  不生效，bisect 实测）。`test_taskbar_live.py` 10 项：风格位、诱导重置刷新
+  回路、焦点/Esc、withdraw/最小化还原各路径。
+- **托盘图标存在性默认常驻**：面板进程活着就在通知区有一枚 W（随主题换
+  glyph）；「启动后收进托盘 / 游戏结束提示」仍 opt-in，只决定关窗行为与气泡
+  前提。消息窗口类改按实例命名并在销窗后 `UnregisterClassW`——旧同名类进程
+  全局，同进程再建托盘（套件内 plain_ui/motion 的 probe=False 段之后）会
+  `RegisterClassW` 失败静默死掉。`test_tray_live.py` 12 项真 Shell_NotifyIcon。
+- **修 v2.11.1 部署删生产配置注释键**：`merge_config` 约定「_ 开头注释始终用
+  包内最新文案」，但 v2.11.1 出厂模板没有注释键，部署把生产 7 个注释键删光
+  （34→27 键）。`installer\factory_config.py` 补 COMMENTS 单一来源（文案更新
+  到 WBOX 当前界面口径），生产配置恢复 34 键、用户值逐键不变；
+  `test_qa_config_compat.py` 35/35。
+- 回归：41/41 单进程全绿（含齿轮菜单连跑 6 次稳定）；QA 出包守卫 42/42
+  （新增「出厂模板含全部注释键」正向断言）；`--self-check` OK；
+  `--layout-check` 两档 × 六档 dpi 全 overflow=0。
+- 实测产物：`Setup_WBOX_v2.11.2.exe` 5,981,637 B（5.70 MB，md5
+  `9845ed32dd1e08d0c4beb08112795914`）、`payload.zip` 1,554,840 B（1.48 MB，md5
+  `613ab657d751828f95b8a144cfe4eeb8`）；较 v2.11.1 传输 +3,374 B（注释键文案）。
+  归档 `releases\v2.11.2\`（pre-change 反向还原备份 + 证据：部署后面板 / 任务栏
+  按钮 / 托盘主区图标截图、机制对照截图、全链日志）。
+- **已部署生产**：静默升级，部署后核验 16/16（首跑一项瞬态、复跑全绿）；
+  取证截图确认任务栏按钮与通知区 W 均可见，溢出 chevron 隐藏（无溢出图标）。
+
+**v2.11.1**（2026-11-18）
+
+本版是发版包 hygiene 与体积审计的修复版（无功能变更），四条审查建议的实测与
+决策见 `installer\README-部署.md`「体积与分发审计（v2.11.1）」：
+
+- **修生产配置混入 payload**：实测 v2.11.0 及以前 payload 的 config.json 与生产
+  逐字节相同（用户小飞机路径 / 游戏库根 / 个人开关随每个版本包分发）。新增
+  `installer\factory_config.py` 出厂模板生成器（运行期三段合并的前两段：内核
+  DEFAULTS → 内置插件 DEFAULT_CONFIG，2,741 B、键序可复现）；`build_exe.bat` 不再
+  拷生产配置，`build_setup.py` 即使 `ABG_APP` 指向生产目录也强制用出厂件入包。
+  安装时旧机器配置仍逐键保留。QA 新增三条断言：模板字节一致 / 无机器路径 /
+  无运行状态文件。
+- **运行数据边界设防**：payload 24 条目全为程序文件 / docs / 出厂模板；
+  `guard.log*`、`guard.pid`、`games_cache.json`、`ace_state.json`、
+  `plugins_state.json`、`config.json.bak*` 等由 SKIP_NAMES + 前缀过滤 + QA 负向
+  断言三层挡住。
+- **传输体积审计结论（维持现状）**：payload 早已 zlib level 9（再提增益 0 B）；
+  CArchive 6→9 离线模拟仅省 5,788 B（0.10%），PyInstaller 5.13.2 无公开压缩级
+  参数，不为 0.1% 碰私有类属性；LZMA 不被该版 CArchive 支持、7z SFX 违背单文件
+  离线交付，均否决。exe/dll 已 UPX。传输体积与磁盘占用口径分开记录。
+- **Tk/Python 运行时不再硬裁剪**：src + 五插件 38 个顶层 import 与 spec 31 项
+  EXCLUDES 零交集；验证链 = 40 项单进程回归 + 冻结 exe self-check（五插件真加载）
+  + layout 两档 × 六档 dpi + 隔离安装 + 共享运行时 68 项比对。再裁 ttk 主题 /
+  编码表收益百 KB 级、风险启动级，否决。
+- **desktop_hud 维持随包内置**：实测 23,788 B zip、占传输 0.40%；按需分发
+  （安装器勾选 + 独立可选 zip / 首启下载）因离线约束与更新矩阵复杂度否决。
+- 回归：40/40 单进程全绿；QA 出包守卫 41/41；`--self-check` OK（出厂配置下
+  AB/ACE/THROTTLE 真加载）；`--layout-check` 两档 × 六档全 overflow=0。
+- 实测产物：`Setup_WBOX_v2.11.1.exe` 5,978,263 B（5.70 MB，md5
+  `95a57b25b634b58d0bfb7cb093581ad5`）、`payload.zip` 1,551,477 B（1.48 MB，md5
+  `650d7ed5b76fcc34a299e157b867ca72`）；较 v2.11.0 传输 -2,720 B（模板瘦身）。
+  归档 `releases\v2.11.1\`（pre-change 反向还原备份 + 生产 app 快照 + 证据）。
+- **已部署生产**：静默升级，部署后核验 15/15。
+
+**v2.11.0**（2026-11-18）
+
+本版把 v2.10.0 有意保留的旧系统标识全量换成 WBOX，并部署到生产；安装器界面
+同步改极简档。迁移与落地实况见 `installer\README-部署.md` 与本版归档：
+
+- **系统标识全量改名**：`WBOX.exe`、默认安装目录 `C:\Program Files\WBOX`、计划任务
+  `WBOX`、注册表卸载键 `...\Uninstall\WBOX`、心跳管道 `WBOXGuardBeat`、单实例 mutex、
+  备份目录 `%LOCALAPPDATA%\WBOX`；构建链产物 `Setup_WBOX.exe`、包格式
+  `wbox-plugin-zip-v1`、共享运行时标记 `.wbox-shared-runtime`、日志 `wbox_setup.log`。
+  插件 API 主类改 `WBOXPlugin`，`WingmanPlugin` 保留为别名（旧插件不改代码仍能装）。
+- **一次性迁移 `migrate_legacy`**：停旧名守护（含目标目录内跑着的旧 exe，不停会撞
+  覆盖解包的占用锁）、删旧计划任务与旧注册表键、旧默认目录搬移或并存暂存、旧备份
+  目录归并；升级继承已注册 InstallLocation（自定义目录只换标识不改目录名），并删除
+  目标目录里的旧名主程序。`test\test_setup_migrate.py` 13 项（含真进程停止用例）。
+- **安装器极简档**：480×460、与面板共用 4× 超采样抗锯齿 sprite，idle/busy/done/fail
+  四态、明暗双主题、键盘可达；`test\test_setup_gui.py` 43 项 + 八张真窗口截图归档。
+- **修三个实测缺陷**：`log_line` 双通道（路径 / 内存 sink），修 GUI 真安装首行日志
+  TypeError；`run_all_inproc` 文件间主线程 `gc.collect()`，修跨文件 Tcl_AsyncDelete
+  硬中断；`BUILTIN_PLUGINS` 补 `desktop_hud`（此前升级/卸载把它误分类为用户插件），
+  `pack_plugin` 改读单一来源，QA 新增交叉断言「payload 内置名单 = BUILTIN_PLUGINS」。
+- **文档同步**：`docs\PLUGIN-SPEC.md` 适用版本 v2.11.0、内置插件口径改五个；指南 HTML
+  重编随包；部署文档卸载示例与产物体积更新。
+- 回归：40 项测试单进程全绿；QA 出包守卫 38/38；共享运行时 68 项与 app 字节一致；
+  `--self-check` OK；`--layout-check` plain + layout-std 两档 × 96/120/144/168/192/240
+  六档全 `overflow=0`。
+- 实测产物：`Setup_WBOX_v2.11.0.exe` 5,980,983 B（5.70 MB，md5
+  `a8e86196faf6e453007dd1ab2e64ba24`）、`payload.zip` 1,554,186 B（1.48 MB，md5
+  `ce86d8866d7d54194ba647101083bec3`）；可复现构建（PYTHONHASHSEED=0 /
+  SOURCE_DATE_EPOCH=1000000000）。归档 `releases\v2.11.0\`（含改动前全量备份与
+  生产 app 快照、回归/出包/部署日志、安装器八态截图与部署后面板真窗口截图）。
+- **已部署生产**：静默安装继承旧键 InstallLocation（仓库 `app\`），迁移链日志齐全；
+  部署后核验 15/15（新旧任务/注册表键/进程/心跳管道/桌面快捷方式/备份归并）。
+
+**v2.10.0**（2026-11-18）
+
+本版收口三件事：液态玻璃退役、极简档打磨、用户可见层改名 WBOX。规矩与落地实况
+见 `docs\SKIN-SPEC.md`「落地实况（v2.10.0，2026-11-18）」：
+
+- **液态玻璃不再内置**：内置只发 `plain` 一档（v1.1.0）；旧配置 `ui_skin=liquid-glass`
+  启动时回退 plain 并一次性写回（guard.log 留痕）；液态玻璃降为第三方参考样例
+  （测试 fixture `test\skinfix.py`），standard 渲染骨架保留不删。
+- **极简档打磨**：窗宽 640→480、行高 40 / 标题栏 36、正文 12px / 辅助 11px（随 dpi
+  缩放）；开关 / 箭头 / 加号 / 窗口按钮等 Canvas 控件改 4× 超采样程序化抗锯齿 sprite
+  （按几何键缓存，minimal 档专用），锯齿边消除；96/144 dpi 真窗口截图明暗双主题复核。
+- **修极简插件设置点不开**：Tk 事件不穿透 Canvas 子窗口，行内图标 / 名称 / 行尾箭头
+  子控件各自绑点击；点整行在本行底下行内展开可调项（≤3 项直接列，更多走
+  「全部 N 项设置…」），再点收起，开关本身只切换不展开；`test\test_plain_ui.py` 34 项断言。
+- **改名 WBOX（仅用户可见层）**：字标 / 窗口标题、桌面与开始菜单快捷方式（WBOX 文件夹）、
+  卸载显示名、安装 / 卸载对话框文案、指南标题、崩溃日志头、README 与部署文档；
+  安装器顺带清理旧名快捷方式与开始菜单文件夹。**系统标识有意保留 Wingman**：
+  `Wingman.exe`、安装目录、计划任务、注册表卸载键、心跳管道、单实例 mutex、
+  `%LOCALAPPDATA%\Wingman` 备份；插件 API 与包格式不变。
+- **文档同步**：`docs\PLUGIN-SPEC.md` 适用版本 v2.10.0、§3.3 改极简行内展开口径；
+  指南 HTML 重编随包（QA 确认内嵌 payload 含 docs 四件套）。
+- 回归：39 项测试单进程全绿（`test\run_all_inproc.py`，含新增 test_plain_ui；
+  standard 档旧回归改用用户皮肤 fixture + 显式 `ui_skin`）；`--self-check` OK；
+  `--layout-check` plain + layout-std 两档 × 96/120/144/168/192/240 六档全
+  `overflow=0`；QA 出包守卫 37 项全过；共享运行时 68 项与 app 字节一致。
+- 实测产物：`Setup_Wingman_v2.10.0.exe` 5,975,075 B（5.70 MB，md5
+  `64547bbdf3b6f2ae64e3634e7709f00b`）、`payload-v2.10.0.zip` 1,552,363 B
+  （1.48 MB，md5 `4da2d89e416666d84e8a68710c745ac5`）；可复现构建
+  （PYTHONHASHSEED=0 / SOURCE_DATE_EPOCH=1000000000），归档见 `releases\v2.10.0\`。
+
+**v2.9.0**（2026-11-18）
+
+接 v2.8.0 对着设计稿（`design\wbox-preview.html` v3.4.0、`design\wbox-skins.html`
+v1.0.0、安装器 `v-setup` 视图）逐项复核，把剩余 UI 缺口全部闭环；规矩与落地实况
+见 `docs\SKIN-SPEC.md` 第 8 节「落地实况（v2.9.0）」：
+
+- **安装器对齐 `v-setup`**：620×540 玻璃窗、idle/busy/done/fail 四态卡片、胶囊按钮、
+  46×28 开关、5px 进度条、失败详情 pane；`test\test_setup_gui.py` 38 项断言
+  （可脚本化 mainloop 驱动四态，不靠真安装）。
+- **面板动效**：ease-out 单曲线 + 按需 tween 链（hover 160 / press 120 / 开关 240 /
+  浮层淡入 200ms）；系统「在窗口中显示动画」关、极简档、probe 一律 0ms，
+  空闲 0 条常驻过渡链；`test\test_ui_motion.py`。
+- **托盘与游戏结束通知**（opt-in、默认关）：菜单新增「启动后收进托盘 / 游戏结束提示」
+  两行；托盘左键叫回、右键「打开设置 / 退出」；气泡仅在窗口收在托盘且
+  active→grace/idle 时发；`test\test_tray_live.py` 真 Shell_NotifyIcon 实测。
+- **皮肤面板**：卡片 / 缩略图 / 标准·最省 pill、明暗三段落盘、api=2「需要更新」卡、
+  `.wbskin` 拒绝理由（含可执行后缀 / api 不符）、超屏滚轮、96–240 dpi 不越界；
+  `test\test_skin_panel.py`。
+- **文案红线与键盘可达**：动词按钮、默认焦点落安全键、Esc=取消、Enter 不默认触发
+  危险动作、显式 Tab 链 + 焦点环、置灰必配解释；`test\test_ui_copy_keyboard.py`。
+- **面板功能与溢出**：菜单内核行 11→13（`CORE_MENU_ROWS` 单一来源）；长路径胶囊
+  240dpi 换行、不再把「选择」按钮顶出胶囊；菜单与插件浮层 scrollregion 跟随内容
+  高度（含 place 之后才到的 Configure），滚到底卸载入口可达；
+  `test\test_plugin_gui_overflow.py` 扩到 24 项断言。
+- **指南同步**：`docs\PLUGIN-SPEC.md` 适用版本 v2.9.0，面板操作说明按 WBOX 入口
+  校对，HTML 重编随包（`--check` 逐字节通过）。
+- **品牌迁移范围：本次仅更新界面品牌**（与 v2.8.0 同口径）：安装目录、`Wingman.exe`、
+  计划任务、注册表卸载项、心跳管道仍有意沿用 Wingman；插件 API 与包格式不变。
+- **明示取舍**（决定不做，不是没做完）：安装器 hover 即时不引 tween；焦点环内缩
+  2px；安装器标题栏带版本号；托盘 / 通知默认关；投影不做——逐条理由见 SKIN-SPEC。
+- **构建链补漏**：`build_exe.bat` 补拷 `desktop_hud`——分发集合一直是 5 个插件
+  （QA 出包守卫口径），以前靠旧 OUTDIR 残留掩盖，全新目录构建会静默丢它；
+  现在拷贝 / 存在性检查 / `__pycache__` 清理都覆盖 5 个目录。
+- 回归：38 项测试单进程全绿（`test\run_all_inproc.py`）+ 独立进程抽查；
+  `--self-check` OK；`--layout-check` 96/120/144/168/192/240 六档 36 行全
+  `overflow=0`；QA 出包守卫 37 项全过。
+- 实测产物：`Setup_Wingman_v2.9.0.exe` 5,972,070 B（5.70 MB，md5
+  `3838334d9d11332eb8a2c47332f6c558`）、`payload-v2.9.0.zip` 1,549,286 B
+  （1.48 MB，md5 `1e47a817c29944578b8a5f9bd004cc8f`）；可复现构建
+  （PYTHONHASHSEED=0 / SOURCE_DATE_EPOCH=1000000000），归档见 `releases\v2.9.0\`。
+
+**v2.8.0**（2026-11-17）
+
+对着 `design\wbox-preview.html`（v3.4.0）与 `design\wbox-skins.html`（v1.0.0）
+把界面做到位，规矩写在 `docs\SKIN-SPEC.md`：
+
+- **自绘标题栏**：皮肤里 `chrome=custom` 时 `overrideredirect` 掉系统标题栏，整行
+  自己画（玻璃 48 / 极简 40）——字标 `WBOX` + 下拉箭头就是菜单入口，右侧一枚
+  32 圆加号、最小化、关闭。拖动、双击、任务栏图标（`WS_EX_APPWINDOW`）都要留住，
+  最小化得先短暂恢复 frame 再 `iconify()`。
+- **圆角窗口**：Tk 画不了圆角窗口，靠 `SetWindowRgn(CreateRoundRectRgn)` 裁；半径读
+  `radius.window`，极简档半径 0 时一次 API 都不调。
+- **圆角卡片列表**：每一行自己是一块 Canvas（子控件用 `create_window` 摆位），
+  卡片 20 圆角、行 14 圆角悬停底板、行尾一枚 30×30 单入口。
+- **极简档**：方角、行高 44、无卡片；行内展开设置块（不建 Toplevel）；标题栏
+  右侧纯文字「设置」→ 同窗换页（`pane=list|set`），设置页行高 36 / 分组头 24。
+- **大写 W 图标**：`design\generate_icons.py` 重写（纯标准库扫描线 + 4× 超采样），
+  9 个尺寸；≤24 px 去容器只留 W；exe / 安装器 / 面板同源。
+- 皮肤是**纯数据包**（`.wbskin` = zip，26 个颜色 token + 圆角 / 行高 / 字号），
+  含可执行后缀的包直接拒绝；内置两套（`liquid-glass` / `plain`）代码内联、随 exe 走。
+- 33 项测试全绿（`test\run_all_inproc.py`），`--self-check` 与 `--layout-check`
+  （96/120/144/168/192/240 dpi）全部 `overflow=0`。
+- **品牌迁移范围：本次仅更新界面品牌**。设置窗口标题与标题栏字标改为 `WBOX`，
+  其余系统项目**有意沿用 Wingman**：安装包 `Setup_Wingman.exe`、默认安装目录
+  `C:\Program Files\Wingman`、主程序 `Wingman.exe`、计划任务名 `Wingman`、
+  注册表卸载项 `Uninstall\Wingman`（显示名「僚机 Wingman」）、开始菜单目录与
+  快捷方式、`%LOCALAPPDATA%\Wingman` 插件备份区、心跳管道 `WingmanGuardBeat`。
+  这些属于改名迁移，要连老用户升级路径一起改，不与视觉改版混做
+  （`src\settings_gui.py` 窗口标题处注释、`src\uninstall_core.py` 常量）。
+  插件 API、包格式 `wingman-plugin-zip-v1` 与命令行参数均不变。
+- 《插件开发指南》适用版本标注同步为 v2.8.0，面板操作说明按 WBOX 入口校对
+  （字标菜单 / 标题栏「＋」/ 设置浮层底部卸载）；`docs\PLUGIN-SPEC.md` 重编
+  HTML 并铺进 `app\docs\`，`--check` 逐字节通过。已出的 v2.8.0 安装包内仍是
+  旧版指南，重新打包后生效。
+
+**v2.5.0**（2026-11-16）
+
+- **崩溃落盘**：守护入口装三层兜底（`faulthandler.enable` + `sys.excepthook` +
+  `threading.excepthook`），未捕获异常 / 段错误把 traceback + 时间戳 + 版本号写进
+  安装根的 `guard_crash.log`（追加写，1 MB 上限轮转保留一代 `.1`）。正常退出不留
+  任何文件——0 字节占位在退出清理时删掉。实现 `src\crash_log.py`，测试
+  `test\test_crash_log.py`（含真实段错误子进程验证）。
+- **守护↔面板心跳**：守护起 named pipe 服务（`\\.\pipe\WingmanGuardBeat`，纯
+  ctypes，零新依赖），面板 2 秒一次连管道读一行状态（pid / 版本 / 会话 / 各插件
+  最近 tick）。连不上就明说「守护没在运行」，不再靠 pid 文件猜。管道空闲时服务
+  线程睡在内核等待队列，空闲 CPU 实测 +0.03pp（0.135% → 0.168%，可忽略）；
+  面板来连时 +0.10pp（真实工作量）。实现 `src\guard_beat.py`，测试
+  `test\test_guard_beat.py`。注意：外线程对阻塞中的 `ConnectNamedPipe` 调
+  `DisconnectNamedPipe` 会死锁，停机走"自连接唤醒"模式。
+- **事件驱动进程检测**：ctypes 直连 WMI COM（`Win32_ProcessStartTrace` /
+  `StopTrace`）做「唤醒器」——游戏启动/退出即时跑一轮判定；轮询降为低频兜底
+  （空闲 2s→30s、会话 0.4s→2.0s；插件登记的弹窗监视快节拍不放宽）。事件通道
+  不可用（未提权 / COM 被禁）自动回落纯轮询并记日志。**空闲 CPU 实测 0.168% →
+  0.052%（约 1/3）**。闸门与插件判定逻辑零改动。实现 `src\proc_events.py`，
+  评估与踩坑记录 `design\proc-events.md`，测试 `test\test_proc_events.py`。
+  低频兜底另配 1 秒标记看门狗：stop.flag / 热重载标记 / config.json 变更立即
+  叫醒主循环，「停止守护」「改动立即生效」时延不回退（测试 [5] 盯着 ≤4s）。
+
+**v2.4.0**（2026-11-16）
+
+- 插件设置弹框（v2.3.0 系列的收尾）：5 个内置插件 manifest 声明 `settings`
+  （bool / int / choice / path 四类控件，点路径 key），面板解析渲染成每插件设置
+  弹框；`manifest.settings` 为空的插件**不显示齿轮**。改动单项写盘、其余键不动。
+- 精确齿轮语义测试（头部齿轮 1 + 插件行齿轮=声明了 settings 的插件数，不许放宽
+  成 >=1）+ 弹框全链路测试（点开 / 四类控件落盘 / 重建与 DPI 切换销毁不留残骸）。
+- `docs\PLUGIN-SPEC.md` 新增 §3.3 `settings` 字段章节（从 `plugin_host` 解析代码
+  反查，只写实现支持的写法），HTML 重编过 `--check`。
+- payload 重打修复 `test_qa_build_setup_guard.py`（守卫没错，构建陈旧）。
+
+**v2.3.0**（2026-11-15）
+
+- 新增《插件开发指南》：`docs\PLUGIN-SPEC.md`（规范正文）+ `docs\plugin-template\`
+  （可直接改名使用的最小示例）+ `docs\插件开发指南.html`（自包含单页，样式内嵌、
+  不联网、双击即读）。面板齿轮菜单新增「插件开发指南」，开始菜单也放一份。
+  HTML 由 `installer/build_plugin_doc.py` 从 Markdown 每次构建重新编译，不会与
+  正文走偏：`--check` 会逐字节比对磁盘上的 HTML 与"用当前 Markdown 重编"的结果，
+  不一致或文件缺失就 exit 1（可当提交前的守门员）；`build_exe.bat` 自动把三件套
+  铺进 `app\docs\`，`test_qa_build_setup_guard.py` 的 `[5b]` 则守着它们必须进 payload。
+- 瘦身：再裁 6 个永远不会被 source 的 Tk 脚本（`xmfbox` / `iconlist` / `clrpick` /
+  `palette` / `choosedir` / `optMenu`），`app\tk\` 522,636 B / 51 文件 →
+  439,739 B / 45 文件（**−82,897 B，−15.9%**）；`tk\ttk\*` 一个没动。
+  判据是"只在 tclIndex 里作为按需自动加载条目出现、且本程序从不调那条命令"。
+  两份 spec 的清单必须逐字一致（构建后有 md5 逐项校验，只改一份会判构建失败）。
+- 内存结论（实测，未改动）：守护模式早已不加载 GUI —— `--guard` 进程 32 个模块、
+  模块表里没有 `_tkinter.pyd` / `tcl86t.dll` / `tk86t.dll`（自测 WorkingSet 6.29 MB；
+  QA 在已连续运行数天的生产实例上读到 7.35 MB，两者不可比，但"模块表里没有 tk"
+  这一条双方一致）；面板模式 63 个模块。`abg_main.py` 的 `import settings_gui` 写在
+  函数体里，导入链上没有 tkinter，所以这 2.2 MB 只在真正开面板时才付出 ——
+  **这一条线（GUI 按需导入）确实没有空间了**，本次也没动它。但"整体没有优化空间"
+  不成立：安装器侧曾白付 123 KB，见下面的复核补丁。
+- 安装器：快捷方式改用原生 `IShellLinkW` + `IPersistFile`（纯 ctypes，零第三方依赖、
+  不再为每个 .lnk 拉起一个 PowerShell 进程），失败自动回落旧实现。
+  `Setup_Wingman.exe` 旁边多出一份带版本号的 `Setup_Wingman_v2.3.0.exe`。
+- 修复：`build_exe.bat` 往全新 `OUTDIR` 出包时不再漏掉 `icon-light/icon-dark.ico`
+  （以前只有生产 `app\` 里手动放着这两张图，临时目录构建会静默丢图标）。
+- **复核补丁**（QA 验收后修，随 v2.3.0 一起发，不单独升版本号）：
+  1. `installer/build_plugin_doc.py --check` 以前是空壳（只在内存里重算一遍就打印
+     "校验通过"，从不读磁盘）——改正文 4 个字、甚至删掉 HTML 都 exit 0。现在真比
+     字节：不一致/缺失都 exit 1，并打印双方大小、md5 与第一处差异的位置和上下文。
+  2. 「指南随包分发」补上自动化守卫：`test_qa_build_setup_guard.py` 新增 `[5b]`，
+     payload 必含 docs 四件套、各出现一次、无 `.pyc`、HTML 严格 UTF-8 且中文正文
+     够量、无外链；`[6]` 追加"内嵌 payload 里也有 docs"。
+  3. `build_exe.bat` 不再可能把产物写进正在运行的安装目录：构建前对
+     `%OUTDIR%\Wingman.exe` 做独占写探测（`shared_runtime.outdir_busy`），被占用就
+     `exit /b 1` 并打印处置办法。旧行为是 exe 换不掉、dll/tcl 却换得掉，静默产出
+     半新半旧的混合安装还报 BUILD OK。
+  4. 回收 123,525 B：安装器以前 `import uuid` 只为解析一个 COM GUID，PyInstaller
+     顺着 `uuid -> platform -> ctypes.util` 与 `uuid._netbios_getnode() -> win32wnet`
+     把 pywin32 三件（`pywintypes38.dll` / `win32wnet.pyd` / `VCRUNTIME140_1.dll`）
+     和 10 个模块拖进了安装包。改成手写十六进制解析后，这些条目在内核里**完全消失**，
+     单测用 `uuid.UUID(...).bytes_le` 做独立裁判逐字节核对 4 个 GUID。
+  5. 测试卫生：`test_ace_state` / `test_quiet_gate` 的 `ace_native.process_age_sec`
+     替身改为 `try/finally` 还原（以前污染同进程后跑的模块）；两条退化成同义反复的
+     菜单行数断言改成"写死应有行数 + 数真实 Tk 控件"；版本号正则 `\d` → `[0-9]`。
+- 验证：28 个单测全绿（独立进程逐个跑 + 单进程顺序跑各一轮）；frozen `--self-check`
+  rc=0（4 插件 ok）、`--layout-check` 六档 DPI 全部 `overflow=0`；
+  `test_qa_shared_runtime` 复刻"从 Setup 的 CArchive 还原安装"全流程并通过
+  （68 项共享运行时逐字节一致）；`build_plugin_doc.py --check` 三场景实测
+  （未改动 0 / 改一字 1 / 删掉 HTML 1）。
+- 体积对照（同机实测）：
+
+  | 项 | v2.2.0 | v2.3.0 | 差 |
+  |---|---|---|---|
+  | `Wingman.exe` | 1,149,374 B | 1,150,048 B | +674 B（菜单多一行 + 版本号 + 注释） |
+  | `app\` 运行时（不含 `docs\`） | 5,571,809 B | 5,489,589 B | **−82,220 B（−1.48%）** |
+  | 其中 `app\tk\` | 522,636 B / 51 文件 | 439,739 B / 45 文件 | −82,897 B |
+  | `app\` 整目录（含新增 `docs\`） | 5,571,809 B | 5,581,330 B | +9,521 B |
+  | `payload.zip` | 1,363,194 B / 14 条目 | 1,399,888 B / 18 条目 | +36,694 B（多 4 个文档） |
+  | 共享运行时清单 | 74 项 | 68 项 | −6（裁掉的 Tk 脚本） |
+  | `Setup_Wingman.exe` | 5,763,549 B | 5,779,574 B | **+16,025 B（+0.28%）** |
+
+  安装包只多了 15.7 KB，而且**增的全部是文档**。逐项归因用 PyInstaller 5.13.2 的
+  `CArchiveReader` 条目表（`(offset, length, ulength, cflag, typecode)`，`length` 才是
+  归档里实际占的字节），基线取 `D:/06-Temp/wingman-v220/out/dist/Setup_Wingman.exe`
+  （2026-11-12 23:29，5,763,549 B）。下表**全部是压缩后口径**，且闭合到文件字节：
+
+  | 条目 | 压缩后 Δ | 解压后 Δ | 说明 |
+  |---|---|---|---|
+  | `payload.zip` | **+36,468** | +36,694 | 指南三件套（原文 91,741 B） |
+  | `setup_abg`（安装器主脚本） | +2,791 | +5,257 | 原生 IShellLink + 占用探测 + 手写 GUID |
+  | `PYZ-00.pyz` | +1,419 | +1,419 | 模块数 93 → 93，与 v2.2.0 相同 |
+  | 6 个 Tcl 脚本（条目消失） | **−24,381** | −82,897 | `xmfbox` `iconlist` `clrpick` `palette` `choosedir` `optMenu` |
+  | 归档合计 | +16,297 | — | |
+  | 非归档区（PE 头 + 节对齐填充） | −272 | — | 268,360 → 268,088 |
+  | **文件合计** | **+16,025** | — | 与 5,779,574 − 5,763,549 逐字节吻合 |
+
+  条目数 85 → 79，消失的正好是上表 6 个 Tcl 脚本，**新增条目 0 个**；内核里
+  `pywintypes38.dll` / `win32wnet.pyd` / `VCRUNTIME140_1.dll` 与 `uuid` / `platform` /
+  `netbios` / `ctypes.util` / `ctypes.macholib` 全部不存在（只剩 PyInstaller 自带的
+  `pyimod04_pywin32` 运行钩子，与 uuid 无关）。
+  二进制的 UPX 压缩未受影响（`python38.dll` 1,436,848 B、`tcl86t.dll` 636,064 B、
+  `tk86t.dll` 609,440 B，与 v2.2.0 逐字节同尺寸）。
+
+- **两份 spec 的裁剪规则有自动守卫了**（v2.3.0 复核补丁 R3）：`test_qa_build_setup_guard`
+  的 `[5c]` 用 AST 抽出 `KEEP_ENC` / `DROP_DIR_PREFIX` / `DROP_FILES` / `EXCLUDES` 四块
+  集合与 `trim_tk_data` 函数体（只允许 print 前缀 `[spec]` / `[setup spec]` 不同），
+  逐块比对两份 spec，差哪一项直接点名（如 `abg 多 ['tk/xxx.tcl']`）；另加一条
+  "`DROP_FILES` 必须全小写"（`trim_tk_data` 比的是 `lower()` 后的路径，
+  写 `tk/optMenu.tcl` 是永远匹配不上的死条目，v2.2.0 踩过）。**不比整文件字节**：
+  两份 spec 的入口、`datas`、`hiddenimports` 本来就不同。
+  顺手清掉 `abg.spec` 里 `EXCLUDES` 的 2 个重复项（`bz2` / `lzma`），
+  两份现在都是 31 项。已验证去重只影响列表长度、不影响产物：同一 `PYTHONHASHSEED`
+  下"去重前 / 去重后"两次构建的 `Wingman.exe` 大小相同、只有 6 个字节不同，
+  且全部落在 PE 的 `TimeDateStamp` 字段上，PYZ 里 102 个模块逐字节一致。
+
+- **可复现构建（同一条命令两次出同一个 md5）**：默认的 PyInstaller 构建**不是**
+  可复现的 —— ① `PYTHONHASHSEED` 随机化会改变 `ftplib` / `hashlib` / `zipfile` / `netrc`
+  这类模块里字符串常量的排列（实测同源码不同 seed，`marshal.dumps(compile(...))` 的
+  md5 三个 seed 三个值）；② PE 头 `TimeDateStamp` 写的是构建时间；③ `payload.zip` 里
+  每个条目的 DOS 时间戳取的是文件 mtime / 当前时间。三处都钉死之后，整条链逐字节可复现。
+
+  两个变量写在两处，**都是写死的常量，不是"外面的环境变量"**：
+  ```bat
+  rem build_exe.bat（主程序打包之前）
+  set PYTHONHASHSEED=0
+  set SOURCE_DATE_EPOCH=1000000000
+  ```
+  `installer\build_setup.py` 里另有一份常量，并**显式 `env=` 传给 PyInstaller 子进程**
+  （从 IDE / 计划任务 / CI 直接调本脚本时继承不到 bat 里 `set` 的值；父进程环境不符时
+  会打印一行"强制覆盖成…"），`payload.zip` 的每个 `ZipInfo` 也用
+  `time.gmtime(SOURCE_DATE_EPOCH)` 写死 `date_time`，`create_system` / `external_attr`
+  一并固定（否则换个操作系统打包字节就不同）。`1000000000` = **2001-09-09T01:46:40Z**，
+  换算是 UTC，避开 zip 的 1980 年下限。
+
+  **以后比体积 / 比 md5 的正确姿势是「同一条命令重打一遍，应当逐字节相同」**，
+  而不是拿历史 md5 当基线去比：改这两个值（或换 Python/UPX/PyInstaller 版本）会让
+  所有历史产物一次性对不上，那是预期行为，不是回归。实测连打两轮完整链
+  （`build_exe.bat` → `build_setup.py`，中间不改任何文件）：
+  `Setup_Wingman.exe` 两次都是 **5,779,574 B / md5 `d728b4cd3dfd886f8548f0029a5bc90f`**，
+  `payload.zip` 两次都是 **1,399,888 B / md5 `a49ad4429abea5870bfd2e4450ebe1ce`**，
+  `Wingman.exe` 两次都是 **1,150,048 B / md5 `6577e2de86aa8b73d1394e99e18c0e76`**。
+  再把父进程环境故意污染成 `PYTHONHASHSEED=12345` / `SOURCE_DATE_EPOCH=1` 打第三轮，
+  三个 md5 依旧一模一样 —— bat 里的 `set` 与 `build_setup.py` 的强制覆盖都真的生效，
+  不依赖调用者先把环境设对。
+
+  踩出来的坑：**"只改 spec 里的注释/去重，md5 必须不变"是个达不到的判据**。同源码
+  不同 `PYTHONHASHSEED` 会让上面那几个标准库模块的字符串常量排列变化，进而改变
+  `PYZ` 里的字节；判断"到底改动了什么"要看**内容**（CArchive 条目表 + PYZ 逐模块
+  md5），不是 md5 本身。这也是当初 `EXCLUDES` 去重（33 → 31 项、集合不变）时
+  "产物 md5 变了"的真正原因：我在同一 seed 下做了去重/不去重两次对照，`Wingman.exe`
+  大小相同、只有 6 个字节不同且全在 `TimeDateStamp`，`PYZ` 里 102 个模块逐字节一致。
+
+- **测试怎么跑**（v2.3.0 复核补丁 R2）：这批 test_*.py 文件是**脚本式**测试（顶层执行断言、
+  末尾 `sys.exit()`），不是 `unittest.TestCase`，所以有三种口径，前两种才是有效口径：
+  ```bat
+  :: (1) 逐个文件独立进程 —— 最严格，CI 用这个
+  for %f in (test\test_*.py) do @C:\Python38\python.exe %f
+  :: (2) 单进程顺序跑 —— 专门查跨模块污染
+  C:\Python38\python.exe test\run_all_inproc.py
+  :: (3) unittest discover —— 本项目不适用
+  C:\Python38\python.exe -m unittest discover -s test -p "test_*.py"
+  ```
+  `discover` **不适用**且不要当作覆盖率证据：它只 `import` 不执行，脚本末尾的 `sys.exit(0)`
+  会被记成 `SystemExit: 0` 的 error；实际情况是 `Ran 4 tests / FAILED (errors=4)`，
+  而这 4 个 error **全是 import 期 `sys.exit(0)`，0 个断言失败**（`test_plugin_popup_config` /
+  `test_popup_guard` / `test_popup_kill` / `test_setup_args`），它连一个断言也跑不到。
+  `run_all_inproc.py` 在同一解释器里按顺序 `runpy.run_path` 跑完 28 个文件、**不清理**
+  `ace_native` / `guard_core` 等模块的全局状态 —— 正是它抓出了"`test_ace_state` 的
+  `process_age_sec` 替身不还原、把 `test_quiet_gate[8]` 带偏"这个问题。它只清理
+  `settings_gui`（`BASE` / `PLUGINS_DIR` 是 import 期常量），各 GUI 测试自己也都会在
+  `import settings_gui` 之前 `sys.modules.pop('settings_gui', None)`，所以任意顺序组合都成立。
+
+**v2.2.0**（2026-11-12）
+
+- 界面统一：设置面板与安装程序收敛到同一套极简黑白组件（10 个中性灰阶 token、
+  8px 栅格、直角、无阴影）。安装器不再用 ttk `vista` 原生控件，改 `tk` 原生自绘，
+  按系统深浅色自动选主题，去掉 `#555` / `#f4f4f4` 硬编码。
+- 图标：品牌盾改成三块实心 + V 形双翼留白（旧版「实心盾 + 背景色上箭头镂空」
+  在行 hover 时会穿帮）；功能图标全线性，新增 `plane` / `pulse` / `folder` / `admin`，
+  小飞机与游戏加加不再共用 `link`。图标白名单 14 → 20，未知 kind 兜底成点不留空白。
+- 文案：六个内部名词退出界面（`config.json` / `plugins\` / `%LOCALAPPDATA%` / `.zip` /
+  `热重载` / `计划任务`）；菜单统一 4–6 字（开机自启 / 重新扫描游戏 / 查看日志 /
+  浅色主题 / 深色主题）；错误框改「发生了什么 + 下一步」，不再抛 `repr(e)`；
+  安装器副标题从写死三功能改成「按需启用功能，随时可以卸载。」
+- 插件显示名：小飞机联动 / 游戏加加联动 / ACE 防护 / 弹窗拦截。
+- 验证：28 个单测全绿（新增 `test_glyph_v22.py`）；frozen 三项自检通过；
+  6 档 DPI 0 溢出；安装器 GUI 自检 `GUI OK 990x780 (dpi=144)`。
+- 产物：`Wingman.exe` 1,149,374 B；`Setup_Wingman.exe` 5,763,549 B；
+  `payload.zip` 1,363,194 B / 14 文件。
+
+**v2.1.1**（2026-11-12）
+
+- 瘦身：`Setup_Wingman.exe` 从 9,085,170 B 降到约 6 MB —— payload 不再重复打包
+  安装器自带的 9 个运行时二进制与 88 个 Tcl/Tk 数据文件，安装时从 `_MEIPASS` 复用；
+  构建后逐项 md5 校验，杜绝两份运行时不一致装出残废程序。
+- 瘦身：两份 spec 的 Tcl 裁剪收窄到 4 张编码表，删掉 `tcl8\*.tm` / `tcl\http1.0` /
+  8 个 tk 脚本；`tk\ttk` 主题文件必须全留（`ttk::LoadThemes` 会逐个 source）。
+- 瘦身：`base_library.zip` 分发用 STORED、落地用 DEFLATE，磁盘占用 1.03 MB → 468 KB。
+- 结论：主 exe 无法再压 —— UPX 对带 CFG 的 PyInstaller bootloader 直接拒绝，
+  `--force` 只省 140 KB 且会破坏控制流保护；python38.dll 已 UPX，改回原始 PE 让
+  ZIP 压反而更大（1.86 MB vs 1.40 MB）。
+
+**v2.1.0**（2026-11-12）
+
+- 加：面板标题栏齿轮左边「＋」添加插件、每行开关右边「垃圾桶」删除插件；
+  插件目录不可写时两个按钮置灰并提示提权，删除走备份区不做硬删除。
+- 加：统一插件包格式 `wingman-plugin-zip-v1`（.zip），`plugin_package.py` 负责
+  只读校验 / 暂存解压 / 覆盖备份 / 卸载备份 / 打包，`installer\pack_plugin.py` 生成内置插件分发包。
+- 加：守护插件热重载 —— 面板写 `plugins_reload.flag`，守护在会话 idle 时重建插件宿主、
+  重新三段合并配置并给新插件发 `on_config`；不重启进程、不丢会话状态机。
+- 加：内置插件 `gamepp`（游戏加加联动），与 afterburner 同一套「所有权 + 基线」语义，
+  用户自己常驻的游戏加加不会被关闭；源码不含任何本机绝对路径。
+- 改：安装器 / 构建脚本的内置插件名单补 `gamepp`，payload 排除热重载标记与
+  插件安装暂存目录。
+
+**v2.0.0**（2026-11-12）
+
+- 架构：抽出插件内核（`plugin_api` / `plugin_host` / `core_defaults`），三个功能变成
+  `plugins\` 下的三个插件；守护的 `tick()` 从 122 行单体缩成 47 行会话状态机，
+  加功能/减功能都不用改内核代码。
+- 加：插件 manifest（id / name / version / api / icon / order / toggle / tip），
+  单插件故障隔离（degraded + 降频，坏插件永远不拖垮守护），零插件也能正常跑。
+- 加：会话状态机 `idle → active → grace → idle`，`ctx.retry_close()` 支持关闭失败重试，
+  `ctx.request_fast_poll()` 让插件按需申请快节拍。
+- 面板：主页面与齿轮菜单完全由注册表驱动，新增「插件」分组（版本 + 运行状态 + 打开目录），
+  删掉插件目录那一行就消失；配置显示改用与守护一致的三段合并。
+- 加：`build_exe.bat` 支持 `OUTDIR`，可以往临时目录出包做冒烟测试，不再覆盖运行中的 `app\`。
+- 加：升级安装保留用户自装插件，卸载前把它们备份到
+  `%LOCALAPPDATA%\Wingman\removed-plugins-<时间戳>\`。
+- 打包：`abg.spec` 的 `hiddenimports` 补上 `plugin_api / plugin_host / core_defaults /
+  ace_native / popup_guard / game_lib`（插件是运行时动态导入，分析器看不见）。
+- 修：`installer\build_setup.py` 对 payload 加硬断言 —— `ABG_APP` 里没有
+  `Wingman.exe` / `plugins\`，或 `plugins\*\plugin.json` 数为 0，直接退出并删掉半成品
+  `payload.zip`；宁可打包失败，也不交付一个"装完三个功能全丢"的安装包。
+- 修：`popup_guard.protect_names` 改为**安全并集**（`plugin_host.SAFE_UNION_PATHS`）：
+  默认 10 项 + 用户项去重，用户按 v1 模板只写 5 项时 qq.exe / wechat.exe /
+  weixin.exe 不会再从保护名单里消失（`deep_merge` 对 list 的整体替换语义没动，
+  `config.json` 也不会被回写）。
+- 加：面板齿轮菜单的插件行追加启用态（`· 已启用` / `· 已禁用`，读面板实时值），
+  manifest 声明 `requires_admin` 且当前未提权时再追加 `· 需要管理员`。
+
+**v1.3.1**（2026-11-12）
+
+- 修：日志里「本局提前拦截 N 次」恒为 0（先清零再打印）
+- 修：安装被中断后留下的目录没有继承权限，普通用户进不去且重装不自愈
+- 修：只读判定只看文件可写，漏了保存所需的目录写权限
+- 修：payload 里混进上一版卸载器，安装包体积翻倍
+- 加：配置保存前留 `.bak`
+- 加：关闭小飞机等待期间复核游戏是否回归，回归即中止
+- 加：启动小飞机前检查所在目录是否对普通用户可写
+- 加：系统时间跳变检测
+
+**v1.3.0**：更名僚机 Wingman；修 4 个 P0（提权、快照失败误判、PATH 劫持、弹窗误杀）。
+
+## 说明
+
+- ACE 相关只调整进程优先级和 IO 优先级，不注入、不改文件、不拦截通信。
+- 弹窗拦截只针对 `ClientBrowser.exe`（游戏内嵌浏览器宿主），判定要求进程名与路径双命中。
+- 本项目只在一台 Windows 10 19045 和一台 Windows 11 虚拟机上验证过，其他环境未测。

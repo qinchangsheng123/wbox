@@ -1,0 +1,21 @@
+{
+  "id": "demo_hello",
+  "name": "示例插件",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "plugin.py:Plugin",
+  "icon": "pulse",
+  "order": 50,
+  "home": true,
+  "builtin": false,
+  "requires_admin": false,
+  "publisher": "你的名字或工作室",
+  "homepage": "https://example.com/your-plugin",
+  "permissions": ["ui.panel"],
+  "toggle": ["demo_hello_enabled"],
+  "tip": "最小可运行的示例插件：只在日志里记录会话开始 / 结束，不改动任何系统状态。\n把它复制到 plugins\\<你的 id>\\ 并改成自己的逻辑。",
+  "config": {
+    "keys": ["demo_hello_enabled", "demo_hello"]
+  },
+  "description": "WBOX 插件模板（Hello World 级，可被 plugin_package 校验通过）"
+}

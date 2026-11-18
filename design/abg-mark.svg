@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- 僚机 Wingman：盾 = 守护，镂空上箭头 = 加力起飞。fill 用 currentColor 自动跟随主题 -->
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M14 7 H50 L54 11 V30
+    C54 43 45 52 32 60
+    C19 52 10 43 10 30
+    V11 Z
+    M32 19 L45 35 H38 V47 H26 V35 H19 Z"/>
+</svg>

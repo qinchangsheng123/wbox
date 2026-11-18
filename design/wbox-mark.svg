@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- WBOX：圆角方块承载颜色，大写 W 用负形亮出来。只有 #000 与 #FFF 两个值 -->
+  <rect width="100" height="100" rx="24" fill="currentColor" opacity=".92"/>
+  <path fill="#FFFFFF" d="M18 28H28L38 62L50 40L62 62L72 28H82L68 72H58L50 56L42 72H32Z"/>
+</svg>

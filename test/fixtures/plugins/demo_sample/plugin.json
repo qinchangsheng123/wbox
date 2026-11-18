@@ -1,0 +1,18 @@
+{
+  "id": "demo_sample",
+  "name": "示例插件",
+  "version": "0.1.0",
+  "api": 1,
+  "entry": "plugin.py:Plugin",
+  "icon": "log",
+  "tip": "离线测试用的示例插件，\n演示 manifest 与钩子写法。",
+  "order": 50,
+  "home": true,
+  "admin": false,
+  "toggle": ["demo_sample_enabled"],
+  "config": {
+    "keys": ["demo_sample_enabled", "demo_sample.greeting", "demo_sample.times"],
+    "defaults": {}
+  },
+  "requires": []
+}

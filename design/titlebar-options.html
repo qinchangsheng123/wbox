@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{
+    --font:"SF Pro Display","SF Pro Text",-apple-system,BlinkMacSystemFont,
+           "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI","PingFang SC",sans-serif;
+    --fg:#0A0A0A; --t2:rgba(0,0,0,.58); --t3:rgba(0,0,0,.44); --hair:rgba(0,0,0,.085);
+    --fill:rgba(0,0,0,.045); --fill-2:rgba(0,0,0,.075);
+  }
+  body{margin:0;padding:22px 24px 40px;background:#E9E9EC;font-family:var(--font);color:var(--fg)}
+  .label{font:600 12px/1.4 var(--font);margin:20px 0 8px;display:flex;align-items:center;gap:8px}
+  .label b{font-weight:700}
+  .label span{font-weight:400;color:rgba(0,0,0,.5)}
+  .badge{font:600 10px/1 monospace;padding:3px 6px;border-radius:6px;background:#0A0A0A;color:#fff}
+  .win{width:640px;background:rgba(255,255,255,.92);border-radius:26px;overflow:hidden;
+       box-shadow:0 12px 30px rgba(0,0,0,.10), inset 0 0 0 1px rgba(0,0,0,.06)}
+  .tb{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px 0 28px}
+  .wm{font-weight:700;font-size:22px;letter-spacing:-.035em;line-height:1;margin:0;flex:none}
+  .grow{flex:1}
+  .acts{display:flex;gap:2px}
+  .btn{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;color:var(--t2)}
+  .btn svg{width:17px;height:17px}
+  .btn.round{width:32px;height:32px;border-radius:50%;background:var(--fill);color:var(--fg)}
+  .btn.round svg{width:17px;height:17px}
+  .wc{display:flex;gap:2px;padding-left:7px;margin-left:1px;box-shadow:inset 1px 0 0 var(--hair)}
+  .wb{width:34px;height:26px;display:grid;place-items:center;border-radius:8px;color:var(--t3)}
+  .wb svg{width:11px;height:11px}
+  .seg{display:flex;align-items:center;gap:0;padding:2px;border-radius:11px;background:var(--fill)}
+  .seg .btn{width:28px;height:26px;border-radius:8px}
+  .seg .div{width:1px;height:14px;background:var(--hair)}
+  .chev{display:flex;align-items:center;gap:5px}
+  .chev svg{width:12px;height:12px;color:var(--t3)}
+  .rows{padding:4px 8px 8px}
+  .row{height:52px;display:flex;align-items:center;gap:14px;padding:0 10px 0 14px;font-size:15px}
+  .ic{width:22px;height:22px;color:var(--fg);opacity:.92}
+  .sw{width:46px;height:28px;border-radius:15px;background:#000;position:relative;margin-left:auto}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:24px;height:24px;border-radius:50%;background:#fff;transform:translateX(18px)}
+  .note{font-size:11.5px;line-height:1.6;color:rgba(0,0,0,.5);margin:8px 0 0;max-width:640px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2"/><circle cx="10" cy="16" r="2"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 12h12"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="1.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 7l10 10M17 7L7 17"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11l16-7-6 16-3.2-6.2z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></symbol>
+</svg>
+<!-- 共用窗口控制 -->
+<template id="ctrls">
+  <div class="wc">
+    <div class="wb"><svg><use href="#i-min"/></svg></div>
+    <div class="wb"><svg><use href="#i-max"/></svg></div>
+    <div class="wb"><svg><use href="#i-close"/></svg></div>
+  </div>
+</template>
+
+<!-- 01 现状 -->
+<div class="label"><span class="badge">01</span><b>现状：字标在最左，两个动作贴着窗口控制</b><span>动作组与系统控制挤成 5 枚图标一排</span></div>
+<div class="win">
+  <div class="tb">
+    <h1 class="wm">WBOX</h1><div class="grow"></div>
+    <div class="acts"><div class="btn"><svg><use href="#i-plus"/></svg></div><div class="btn"><svg><use href="#i-sliders"/></svg></div></div>
+    <div class="wc"><div class="wb"><svg><use href="#i-min"/></svg></div><div class="wb"><svg><use href="#i-max"/></svg></div><div class="wb"><svg><use href="#i-close"/></svg></div></div>
+  </div>
+  <div class="rows">
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>小飞机联动<span class="sw"></span></div>
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>游戏加加联动<span class="sw"></span></div>
+  </div>
+</div>
+
+<!-- 02 左成组 -->
+<div class="label"><span class="badge">02</span><b>左成组：动作跟着字标走，右上只留窗口控制</b><span>语义分区最干净，中间留白</span></div>
+<div class="win">
+  <div class="tb">
+    <h1 class="wm">WBOX</h1>
+    <div class="acts"><div class="btn"><svg><use href="#i-plus"/></svg></div><div class="btn"><svg><use href="#i-sliders"/></svg></div></div>
+    <div class="grow"></div>
+    <div class="wc"><div class="wb"><svg><use href="#i-min"/></svg></div><div class="wb"><svg><use href="#i-max"/></svg></div><div class="wb"><svg><use href="#i-close"/></svg></div></div>
+  </div>
+  <div class="rows">
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>小飞机联动<span class="sw"></span></div>
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>游戏加加联动<span class="sw"></span></div>
+  </div>
+</div>
+
+<!-- 03 胶囊分段 -->
+<div class="label"><span class="badge">03</span><b>胶囊分段：两个动作并成一个控件，与窗口控制靠形状分开</b><span>仍靠右，但不再散成 5 枚</span></div>
+<div class="win">
+  <div class="tb">
+    <h1 class="wm">WBOX</h1><div class="grow"></div>
+    <div class="seg">
+      <div class="btn"><svg><use href="#i-plus"/></svg></div>
+      <div class="div"></div>
+      <div class="btn"><svg><use href="#i-sliders"/></svg></div>
+    </div>
+    <div class="wc"><div class="wb"><svg><use href="#i-min"/></svg></div><div class="wb"><svg><use href="#i-max"/></svg></div><div class="wb"><svg><use href="#i-close"/></svg></div></div>
+  </div>
+  <div class="rows">
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>小飞机联动<span class="sw"></span></div>
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>游戏加加联动<span class="sw"></span></div>
+  </div>
+</div>
+
+<!-- 04 单入口 -->
+<div class="label"><span class="badge">04</span><b>单入口：菜单挂到字标旁，标题栏只剩一枚加号</b><span>最干净，但设置入口可发现性下降</span></div>
+<div class="win">
+  <div class="tb">
+    <div class="chev"><h1 class="wm">WBOX</h1><svg><use href="#i-chev"/></svg></div>
+    <div class="grow"></div>
+    <div class="btn round"><svg><use href="#i-plus"/></svg></div>
+    <div class="wc"><div class="wb"><svg><use href="#i-min"/></svg></div><div class="wb"><svg><use href="#i-max"/></svg></div><div class="wb"><svg><use href="#i-close"/></svg></div></div>
+  </div>
+  <div class="rows">
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>小飞机联动<span class="sw"></span></div>
+    <div class="row"><svg class="ic"><use href="#i-plane"/></svg>游戏加加联动<span class="sw"></span></div>
+  </div>
+</div>
+
+<p class="note">四套都保持 640 宽、48 高标题栏、22/700 字标。窗口控制统一 34×26 灰线图标，不参与竞争。</p>
+<p class="note" style="margin-top:14px"><b>结论：</b>03 已落进 <span style="font-family:Consolas,monospace">wbox-preview.html v3.2.0</span>，落稿时去掉了胶囊内的分隔线（加号与设置是两个不同动作，分段线的语义是「同一组里二选一」，不适用）。02 若要用，只需把 <span style="font-family:Consolas,monospace">.tb-seg</span> 的 <span style="font-family:Consolas,monospace">margin-left:auto</span> 去掉、放到字标后面。</p>
+</body>
+</html>

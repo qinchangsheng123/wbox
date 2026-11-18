@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WBOX · 皮肤系统与极简版 v1.0.0（待确认）</title>
+<style>
+/* ============================================================
+   WBOX Skin System v1.0.0
+   两套内置皮肤：Liquid Glass（标准）/ Plain（最省）
+   皮肤 = 纯数据（skin.json + 位图），不含可执行代码
+   ============================================================ */
+:root{
+  --font:"SF Pro Display","SF Pro Text",-apple-system,BlinkMacSystemFont,
+         "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI","PingFang SC",sans-serif;
+  --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --r-win:26px; --r-card:20px; --r-row:14px;
+  --fg:#0A0A0A; --t2:rgba(0,0,0,.58); --t3:rgba(0,0,0,.44); --t4:rgba(0,0,0,.30);
+  --hair:rgba(0,0,0,.085); --hair-strong:rgba(0,0,0,.14);
+  --fill:rgba(0,0,0,.045); --fill-2:rgba(0,0,0,.075);
+  --inset:rgba(255,255,255,.42);
+  --glass:rgba(255,255,255,.54);
+  --glass-hi:rgba(255,255,255,.92);
+  --glass-line:rgba(255,255,255,.55);
+  --glass-edge:rgba(0,0,0,.07);
+  --menu-base:rgba(252,252,253,.72);
+  --pop-base:rgba(252,252,253,.97);
+  --switch-off:rgba(120,120,128,.30);
+  --on:#000000; --on-knob:#FFFFFF;
+  --amb0:#E9E9EC; --amb1:#FFFFFF; --amb2:#C4C4CF; --amb3:#FBFBFD;
+  --shadow:0 28px 70px rgba(0,0,0,.16), 0 4px 14px rgba(0,0,0,.06);
+  --shadow-float:0 34px 80px rgba(0,0,0,.20), 0 6px 18px rgba(0,0,0,.08);
+}
+[data-theme="dark"]{
+  --fg:#FAFAFA; --t2:rgba(255,255,255,.62); --t3:rgba(255,255,255,.42); --t4:rgba(255,255,255,.28);
+  --hair:rgba(255,255,255,.12); --hair-strong:rgba(255,255,255,.18);
+  --fill:rgba(255,255,255,.075); --fill-2:rgba(255,255,255,.11);
+  --inset:rgba(255,255,255,.055);
+  --glass:rgba(20,20,23,.66);
+  --glass-hi:rgba(255,255,255,.22);
+  --glass-line:rgba(255,255,255,.13);
+  --glass-edge:rgba(0,0,0,.55);
+  --menu-base:rgba(28,28,32,.80);
+  --pop-base:rgba(30,30,34,.97);
+  --switch-off:rgba(120,120,128,.38);
+  --on:#FFFFFF; --on-knob:#0A0A0A;
+  --amb0:#050507; --amb1:#26262E; --amb2:#0D0D11; --amb3:#1B1B22;
+  --shadow:0 30px 80px rgba(0,0,0,.62), 0 4px 16px rgba(0,0,0,.40);
+  --shadow-float:0 36px 90px rgba(0,0,0,.70), 0 8px 22px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); font-size:14px; line-height:1.5; color:var(--fg);
+  background:var(--amb0); -webkit-font-smoothing:antialiased;
+}
+button{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--fg); outline-offset:3px; border-radius:6px}
+.wallpaper{
+  position:fixed; inset:0; z-index:-1;
+  background:
+    radial-gradient(780px 580px at 6% 0%, var(--amb1) 0%, transparent 58%),
+    radial-gradient(700px 540px at 98% 6%, var(--amb2) 0%, transparent 62%),
+    radial-gradient(720px 620px at 26% 40%, var(--amb2) 0%, transparent 58%),
+    radial-gradient(920px 660px at 76% 46%, var(--amb3) 0%, transparent 60%),
+    radial-gradient(1200px 840px at 44% 114%, var(--amb1) 0%, transparent 66%),
+    var(--amb0);
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:20px;
+  padding:14px 28px; margin:18px 24px 0; border-radius:20px;
+  background:var(--glass); backdrop-filter:blur(26px) saturate(170%);
+  -webkit-backdrop-filter:blur(26px) saturate(170%);
+  box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line),
+             0 10px 30px rgba(0,0,0,.07);
+}
+.tb-brand{display:flex; align-items:baseline; gap:10px; margin-right:4px}
+.tb-brand strong{font-size:16px; font-weight:700; letter-spacing:-.02em}
+.tb-tag{font-size:11px; color:var(--t3); padding:3px 8px; border-radius:8px; background:var(--fill)}
+.tabs{display:flex; gap:2px; margin-left:auto; padding:3px; border-radius:12px; background:var(--fill)}
+.tab{
+  appearance:none; border:0; background:transparent; cursor:pointer;
+  padding:7px 14px; border-radius:9px; font-size:13px; color:var(--t2);
+  transition:background-color .16s var(--ease), color .16s var(--ease);
+}
+.tab:hover{color:var(--fg)}
+.tab[aria-pressed="true"]{background:var(--fg); color:var(--amb0)}
+.seg-theme{display:flex; padding:3px; border-radius:12px; background:var(--fill); gap:2px}
+.seg-theme button{
+  appearance:none; border:0; background:transparent; cursor:pointer;
+  padding:7px 12px; border-radius:9px; font-size:12.5px; color:var(--t2);
+}
+.seg-theme button[aria-pressed="true"]{background:var(--glass); color:var(--fg); box-shadow:0 1px 3px rgba(0,0,0,.10)}
+
+main{max-width:1240px; margin:0 auto; padding:36px 32px 80px}
+.view{display:none}
+.view.active{display:block; animation:rise .26s var(--ease-out)}
+body.static .view.active{animation:none}
+body.static .view.active{animation:none}
+@keyframes rise{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+.eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--t3); margin:0 0 10px}
+h2.sec{font-size:27px; font-weight:700; letter-spacing:-.028em; margin:0 0 14px}
+p.lede{font-size:14px; line-height:1.72; color:var(--t2); max-width:780px; margin:0 0 8px}
+p.cap{font-size:12px; line-height:1.6; color:var(--t3); margin:12px 0 0}
+.note{
+  font-size:12.5px; line-height:1.7; color:var(--t2); margin:16px 0 0; max-width:820px;
+  padding:12px 16px; border-radius:14px; background:var(--inset);
+  box-shadow:inset 0 0 0 1px var(--hair);
+}
+.note b{color:var(--fg); font-weight:650}
+code,.mono{font-family:var(--mono); font-size:12px}
+
+/* ---------- 舞台 ---------- */
+.stage{
+  position:relative; padding:36px; border-radius:28px; margin:26px 0 0;
+  background:radial-gradient(600px 400px at 20% 0%, var(--amb1), transparent 70%),
+             radial-gradient(500px 380px at 90% 80%, var(--amb3), transparent 70%), var(--amb2);
+}
+.stage-light{background:radial-gradient(600px 400px at 20% 0%, #FFFFFF, transparent 70%),
+             radial-gradient(500px 380px at 90% 80%, #F4F4F7, transparent 70%), #DEDEE4}
+.stage-dark{background:radial-gradient(600px 400px at 20% 0%, #2A2A33, transparent 70%),
+             radial-gradient(500px 380px at 90% 80%, #15151B, transparent 70%), #0A0A0D}
+
+/* ============ 通用窗口（玻璃） ============ */
+.app-window{
+  width:640px; max-width:100%; border-radius:var(--r-win); overflow:hidden;
+  background:var(--glass); backdrop-filter:blur(30px) saturate(170%);
+  -webkit-backdrop-filter:blur(30px) saturate(170%);
+  box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line),
+             0 0 0 1px var(--glass-edge), var(--shadow);
+}
+.titlebar{
+  height:48px; display:flex; align-items:center; justify-content:space-between;
+  gap:8px; padding:0 8px 0 28px;
+}
+.tb-menu{
+  display:flex; align-items:center; gap:6px; flex:none; height:34px;
+  margin-left:-8px; padding:0 9px 0 8px; border:0; border-radius:11px;
+  background:transparent; cursor:pointer; color:var(--fg); text-align:left;
+  transition:background-color .15s var(--ease);
+}
+.tb-menu:hover{background:var(--fill)}
+.tb-menu[aria-expanded="true"]{background:var(--fill-2)}
+.wordmark{font-weight:700; line-height:1; margin:0; font-size:22px; letter-spacing:-.035em}
+.tb-menu .chev{width:12px; height:12px; flex:none; color:var(--t3)}
+.tb-add{
+  width:32px; height:32px; display:grid; place-items:center; padding:0; flex:none;
+  margin-left:auto; margin-right:2px; border:0; border-radius:50%;
+  background:var(--fill); cursor:pointer; color:var(--fg);
+  transition:background-color .15s var(--ease);
+}
+.tb-add:hover{background:var(--fill-2)}
+.tb-add svg{width:17px; height:17px}
+.wctrls{display:flex; gap:2px; padding-left:7px; margin-left:1px; box-shadow:inset 1px 0 0 var(--hair)}
+.wbtn{
+  width:34px; height:26px; display:grid; place-items:center; border:0;
+  background:transparent; border-radius:8px; cursor:pointer; color:var(--t3);
+  transition:background-color .14s var(--ease), color .14s var(--ease);
+}
+.wbtn:hover{background:var(--fill-2); color:var(--fg)}
+.wbtn svg{width:11px; height:11px}
+
+.app-body{padding:4px 8px 8px}
+.list{
+  background:var(--inset); border-radius:var(--r-card); padding:6px;
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 1px 0 var(--glass-hi);
+}
+.row{
+  position:relative; display:flex; align-items:center; gap:14px;
+  height:52px; padding:0 10px 0 14px; border-radius:var(--r-row);
+  transition:background-color .16s var(--ease);
+}
+.row:hover{background:var(--fill)}
+.row + .row::before{
+  content:""; position:absolute; top:0; left:50px; right:12px; height:1px; background:var(--hair);
+}
+.row .fi{width:22px; height:22px; color:var(--fg); opacity:.92; flex:none}
+.row .nm{font-size:15px; font-weight:500; letter-spacing:-.012em; flex:1; min-width:0}
+.sw{
+  width:46px; height:28px; border-radius:15px; background:var(--on);
+  position:relative; border:0; cursor:pointer; flex:none; padding:0;
+  transition:background-color .18s var(--ease);
+}
+.sw::after{
+  content:""; position:absolute; top:2px; left:2px; width:24px; height:24px;
+  border-radius:50%; background:var(--on-knob);
+  transform:translateX(18px); transition:transform .18s var(--ease);
+}
+.sw[aria-checked="false"]{background:var(--switch-off)}
+.sw[aria-checked="false"]::after{transform:none; background:#FFF}
+
+/* ============ 皮肤管理页（设置里的「外观」） ============ */
+.skin-card{
+  display:flex; align-items:center; gap:14px; padding:10px;
+  border-radius:18px; background:var(--inset); cursor:pointer;
+  box-shadow:inset 0 0 0 1px var(--hair);
+  transition:background-color .16s var(--ease);
+}
+.skin-card:hover{background:var(--fill)}
+.skin-card[aria-checked="true"]{box-shadow:inset 0 0 0 1px var(--fg); background:var(--fill)}
+.skin-thumb{
+  width:112px; height:63px; border-radius:12px; flex:none; overflow:hidden; position:relative;
+  box-shadow:inset 0 0 0 1px var(--hair);
+}
+.skin-meta{flex:1; min-width:0}
+.skin-name{font-size:15px; font-weight:600; letter-spacing:-.012em; display:flex; align-items:center; gap:8px}
+.skin-sub{font-size:12px; color:var(--t3); margin-top:3px}
+.pill{
+  font-size:10.5px; font-weight:600; letter-spacing:.02em; padding:2px 7px;
+  border-radius:7px; background:var(--fill-2); color:var(--t2);
+}
+.pill.min{background:rgba(0,0,0,.86); color:#FFF}
+[data-theme="dark"] .pill.min{background:#FFF; color:#000}
+.tick{width:20px; height:20px; flex:none; color:var(--fg)}
+.skin-add{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  height:52px; border-radius:16px; border:1px dashed var(--hair-strong);
+  background:transparent; color:var(--t2); cursor:pointer; font-size:13px; width:100%;
+}
+.skin-add:hover{background:var(--fill); color:var(--fg)}
+.skin-add svg{width:15px; height:15px}
+
+/* 缩略图里的两种皮肤缩影 —— 纯 CSS，不用图片 */
+.mini{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  font-size:5px; overflow:hidden;
+}
+.mini-glass{background:linear-gradient(150deg,#F7F7FA,#D9D9E2 60%,#EFEFF4)}
+.mini-glass .m-bar{height:12px; background:rgba(255,255,255,.55); border-bottom:1px solid rgba(0,0,0,.06)}
+.mini-glass .m-list{
+  margin:4px 4px 0; padding:2px; border-radius:5px;
+  background:rgba(255,255,255,.5); box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06);
+}
+.mini-flat{background:#FFFFFF}
+.mini-flat .m-bar{height:11px; background:#FFFFFF; border-bottom:1px solid #E6E6E6}
+.mini-flat .m-list{margin:0; padding:0; background:#FFFFFF}
+.m-row{display:flex; align-items:center; gap:3px; height:7px; padding:0 4px}
+.m-row + .m-row{border-top:.5px solid rgba(0,0,0,.06)}
+.m-dot{width:4px; height:4px; border-radius:1px; background:rgba(0,0,0,.55); flex:none}
+.mini-flat .m-dot{background:#333}
+.m-line{height:2px; border-radius:1px; background:rgba(0,0,0,.20); width:46%; flex:none}
+.m-sw{width:9px; height:5px; border-radius:2.5px; background:#000; flex:none; position:relative}
+.m-sw::after{content:""; position:absolute; top:.7px; left:4.6px; width:3.6px; height:3.6px; border-radius:50%; background:#FFF}
+.mini-flat .m-sw{border-radius:0; background:#222}
+.mini-flat .m-sw::after{border-radius:0; left:5px; top:1px; width:3px; height:3px}
+
+/* ============ 极简窗口（Plain） ============ */
+.plain-window{
+  width:640px; max-width:100%; min-height:332px; background:#FFFFFF; color:#000000;
+  border-radius:0; overflow:hidden; position:relative;
+  box-shadow:0 0 0 1px rgba(0,0,0,.16), 0 14px 34px rgba(0,0,0,.14);
+}
+[data-theme="dark"] .plain-window{
+  background:#111111; color:#F2F2F2;
+  box-shadow:0 0 0 1px rgba(255,255,255,.18), 0 14px 34px rgba(0,0,0,.6);
+}
+.p-head{
+  height:40px; display:flex; align-items:center; gap:8px; padding:0 6px 0 16px;
+  border-bottom:1px solid #E6E6E6;
+}
+[data-theme="dark"] .p-head{border-bottom-color:#2A2A2A}
+.p-mark{font-size:15px; font-weight:700; letter-spacing:-.02em; margin:0; line-height:1}
+.p-head .grow{flex:1}
+.p-ico{
+  width:26px; height:26px; display:grid; place-items:center; border:0; background:transparent;
+  color:#000; cursor:pointer;
+}
+[data-theme="dark"] .p-ico{color:#F2F2F2}
+.p-ico:hover{background:#F0F0F0}
+[data-theme="dark"] .p-ico:hover{background:#1E1E1E}
+.p-ico svg{width:15px; height:15px}
+.p-close{width:34px; height:26px; display:grid; place-items:center; border:0; background:transparent; cursor:pointer; color:#000}
+[data-theme="dark"] .p-close{color:#F2F2F2}
+.p-close:hover{background:#E81123; color:#FFF}
+.p-close svg{width:11px; height:11px}
+.p-body{padding:0}
+.p-row{
+  display:flex; align-items:center; gap:10px; height:44px; padding:0 12px 0 14px;
+  border-bottom:1px solid #EFEFEF; cursor:pointer; background:transparent; width:100%;
+  border-left:0; border-right:0; border-top:0; text-align:left;
+}
+[data-theme="dark"] .p-row{border-bottom-color:#242424}
+.p-row:hover{background:#F7F7F7}
+[data-theme="dark"] .p-row:hover{background:#181818}
+.p-row .fi{width:16px; height:16px; flex:none; opacity:.86}
+.p-row .nm{font-size:13px; flex:1; min-width:0}
+.p-row .hint{font-size:11px; color:#8A8A8A; flex:none}
+.p-sw{
+  width:36px; height:18px; flex:none; position:relative; background:#111; border:0; padding:0; cursor:pointer;
+}
+[data-theme="dark"] .p-sw{background:#EDEDED}
+.p-sw::after{content:""; position:absolute; top:2px; left:20px; width:14px; height:14px; background:#FFF}
+[data-theme="dark"] .p-sw::after{background:#111}
+.p-sw[aria-checked="false"]{background:#C9C9C9}
+.p-sw[aria-checked="false"]::after{left:2px; background:#FFF}
+/* 深色下「关」要明显比「开」暗，否则两块浅色分不出状态 */
+[data-theme="dark"] .p-sw[aria-checked="false"]{background:#3A3A3A}
+[data-theme="dark"] .p-sw[aria-checked="false"]::after{background:#EDEDED}
+.p-more{width:22px; height:22px; display:grid; place-items:center; color:#8A8A8A; flex:none}
+.p-more svg{width:12px; height:12px; transition:transform .12s linear}
+.p-row.is-open .p-more svg{transform:rotate(90deg)}
+.p-expand{
+  display:none; background:#F7F7F7; border-bottom:1px solid #E6E6E6;
+  padding:8px 46px 10px 40px;
+}
+[data-theme="dark"] .p-expand{background:#181818; border-bottom-color:#242424}
+.p-row.is-open + .p-expand{display:block}
+.p-item{display:flex; align-items:center; gap:10px; height:30px; font-size:12px}
+.p-item .lb{flex:1; color:#333}
+[data-theme="dark"] .p-item .lb{color:#CFCFCF}
+.p-item .val{font-family:var(--mono); font-size:11px; color:#8A8A8A}
+.p-del{
+  margin-top:6px; height:28px; padding:0 10px; border:1px solid #E0E0E0; background:#FFF;
+  color:#B3261E; font-size:12px; cursor:pointer;
+}
+.p-del:hover{background:#FDEDEC}
+
+/* ---------- 对照表 ---------- */
+table.cmp{
+  width:100%; border-collapse:collapse; margin-top:18px; font-size:13px;
+  background:var(--inset); border-radius:16px; overflow:hidden;
+  box-shadow:inset 0 0 0 1px var(--hair);
+}
+table.cmp th,table.cmp td{padding:11px 14px; text-align:left; border-bottom:1px solid var(--hair)}
+table.cmp th{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--t3); font-weight:600}
+table.cmp tr:last-child td{border-bottom:0}
+table.cmp td.num{font-family:var(--mono); font-size:12px}
+table.cmp td.win{color:var(--fg); font-weight:600}
+table.cmp td.dim{color:var(--t3)}
+.bar{display:flex; align-items:center; gap:8px}
+.bar i{display:block; height:6px; border-radius:3px; background:var(--fg); opacity:.82}
+.bar span{font-family:var(--mono); font-size:11px; color:var(--t2); min-width:34px}
+
+/* ---------- 规范块 ---------- */
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:22px}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.card{
+  background:var(--inset); border-radius:18px; padding:18px 20px;
+  box-shadow:inset 0 0 0 1px var(--hair);
+}
+.card h3{font-size:14px; font-weight:650; margin:0 0 10px; letter-spacing:-.01em}
+.card p{font-size:12.5px; line-height:1.7; color:var(--t2); margin:0 0 8px}
+pre.code{
+  margin:12px 0 0; padding:14px 16px; border-radius:14px; overflow-x:auto;
+  background:rgba(0,0,0,.045); font-family:var(--mono); font-size:11.5px; line-height:1.7;
+  color:var(--fg); box-shadow:inset 0 0 0 1px var(--hair);
+}
+[data-theme="dark"] pre.code{background:rgba(255,255,255,.06)}
+pre.code .c{color:var(--t3)}
+ul.rules{margin:8px 0 0; padding-left:18px; font-size:12.5px; line-height:1.8; color:var(--t2)}
+ul.rules li{margin-bottom:4px}
+ul.rules b{color:var(--fg)}
+.kbd{
+  font-family:var(--mono); font-size:11px; padding:1px 5px; border-radius:5px;
+  background:var(--fill-2); box-shadow:inset 0 0 0 1px var(--hair);
+}
+footer{margin-top:56px; font-size:11.5px; color:var(--t3); display:flex; gap:16px; flex-wrap:wrap}
+
+/* ============ 深色补偿（放最后，才能盖住上面按 light 写的规则） ============
+   玻璃的物理约束：深色半透明必须叠在深舞台上，否则读不出「黑」，
+   面板会变成一块发灰的塑料板。 */
+[data-theme="dark"] .stage-light{
+  background:radial-gradient(600px 400px at 20% 0%, #2C2C35, transparent 70%),
+             radial-gradient(500px 380px at 90% 80%, #16161C, transparent 70%), #08080A;
+}
+[data-theme="dark"] .tab{color:rgba(255,255,255,.74)}
+[data-theme="dark"] .tab:hover{color:#FFFFFF}
+[data-theme="dark"] .tab[aria-pressed="true"]{background:#FAFAFA; color:#0A0A0A}
+[data-theme="dark"] .seg-theme button{color:rgba(255,255,255,.74)}
+[data-theme="dark"] .seg-theme button[aria-pressed="true"]{background:rgba(255,255,255,.18); color:#FFFFFF}
+[data-theme="dark"] .pill{background:rgba(255,255,255,.15); color:rgba(255,255,255,.78)}
+[data-theme="dark"] .pill.min{background:#FFFFFF; color:#0A0A0A}
+[data-theme="dark"] .skin-add{border-color:rgba(255,255,255,.26); color:rgba(255,255,255,.70)}
+[data-theme="dark"] .skin-add:hover{background:rgba(255,255,255,.08); color:#FFFFFF}
+[data-theme="dark"] .skin-thumb{box-shadow:inset 0 0 0 1px rgba(255,255,255,.20)}
+[data-theme="dark"] .tb-brand strong{color:#FFFFFF}
+[data-theme="dark"] .tb-tag{background:rgba(255,255,255,.12); color:rgba(255,255,255,.66)}
+[data-theme="dark"] table.cmp td.win{color:#FFFFFF}
+.p-sw.sm{width:30px; height:16px}
+.p-sw.sm::after{top:2px; left:15px; width:12px; height:12px}
+.p-sw.sm[aria-checked="false"]::after{left:2px}
+.p-del{margin-top:8px}
+[data-theme="dark"] .p-del{background:#151515; border-color:#333333; color:#FF8A80}
+[data-theme="dark"] .p-del:hover{background:#241617}
+/* 缩略图跟随当前主题：缩略图展示的就是这套皮肤在这个外观下的样子 */
+[data-theme="dark"] .mini-glass{background:linear-gradient(150deg,#2E2E38,#16161C 60%,#24242D)}
+[data-theme="dark"] .mini-glass .m-bar{background:rgba(255,255,255,.09); border-bottom-color:rgba(255,255,255,.10)}
+[data-theme="dark"] .mini-glass .m-list{background:rgba(255,255,255,.06); box-shadow:inset 0 0 0 .5px rgba(255,255,255,.10)}
+[data-theme="dark"] .mini-flat{background:#101010}
+[data-theme="dark"] .mini-flat .m-bar{background:#101010; border-bottom-color:#2A2A2A}
+[data-theme="dark"] .m-row + .m-row{border-top-color:rgba(255,255,255,.12)}
+[data-theme="dark"] .m-dot{background:rgba(255,255,255,.62)}
+[data-theme="dark"] .m-line{background:rgba(255,255,255,.24)}
+[data-theme="dark"] .m-sw{background:#EDEDED}
+[data-theme="dark"] .m-sw::after{background:#111111}
+
+/* ---------- 极简：设置入口 = 标题栏一枚纯文字按钮，点开在同一窗口内切页 ---------- */
+.p-txt{
+  height:26px; padding:0 9px; flex:none; border:0; background:transparent; cursor:pointer;
+  font:inherit; font-size:12px; color:#333;
+}
+[data-theme="dark"] .p-txt{color:#CFCFCF}
+.p-txt:hover{background:#F0F0F0}
+[data-theme="dark"] .p-txt:hover{background:#1E1E1E}
+.p-back{
+  display:none; width:24px; height:24px; place-items:center; flex:none;
+  border:0; background:transparent; color:#333; cursor:pointer; padding:0;
+}
+[data-theme="dark"] .p-back{color:#CFCFCF}
+.p-back:hover{background:#F0F0F0}
+[data-theme="dark"] .p-back:hover{background:#1E1E1E}
+.p-back svg{width:12px; height:12px}
+.p-crumb{display:none; font-size:12px; color:#8A8A8A; flex:none}
+.plain-window[data-pane="set"] .p-back{display:grid}
+.plain-window[data-pane="set"] .p-crumb{display:inline}
+.plain-window[data-pane="set"] .p-txt,
+.plain-window[data-pane="set"] .p-add,
+.plain-window[data-pane="set"] .p-body{display:none}
+.plain-window[data-pane="set"] .p-set{display:block}
+
+/* 设置页：同一窗口内换内容，不做滚动容器（滚动要 canvas，反而贵）——窗口按内容长高 */
+.p-set{display:none; padding-bottom:4px}
+.p-grp{
+  height:24px; display:flex; align-items:flex-end; padding:0 14px 4px;
+  font-size:11px; color:#8A8A8A; letter-spacing:.04em;
+}
+.p-line{
+  display:flex; align-items:center; gap:10px; height:36px; width:100%;
+  padding:0 12px 0 14px; border:0; border-bottom:1px solid #EFEFEF;
+  background:transparent; color:inherit; font:inherit; font-size:13px; text-align:left;
+}
+[data-theme="dark"] .p-line{border-bottom-color:#242424}
+.p-line .lb{flex:1; min-width:0}
+.p-line .val{font-family:var(--mono); font-size:11px; color:#8A8A8A; flex:none}
+.p-line:last-child{border-bottom:0}
+button.p-line{cursor:pointer}
+button.p-line:hover{background:#F7F7F7}
+[data-theme="dark"] button.p-line:hover{background:#181818}
+/* 单选点是系统控件的形状，Tk 里就是原生 radiobutton，不算自绘 */
+.p-radio{
+  width:13px; height:13px; flex:none; position:relative; border-radius:50%;
+  box-shadow:inset 0 0 0 1px #ADADAD;
+}
+.p-radio[aria-checked="true"]{box-shadow:inset 0 0 0 1px #111}
+.p-radio[aria-checked="true"]::after{
+  content:""; position:absolute; inset:3px; border-radius:50%; background:#111;
+}
+[data-theme="dark"] .p-radio{box-shadow:inset 0 0 0 1px #6E6E6E}
+[data-theme="dark"] .p-radio[aria-checked="true"]{box-shadow:inset 0 0 0 1px #EDEDED}
+[data-theme="dark"] .p-radio[aria-checked="true"]::after{background:#EDEDED}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5.2v13.6 M5.2 12h13.6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5L12 15l5.5-5.5"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 6.5L9 12l5.5 5.5"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5L15 12l-5.5 5.5"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5.4 12h13.2"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="6" y="6" width="12" height="12" rx="1.4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12 M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 12.6l4.8 4.6 9.6-10.2"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3.4 11.4L20.6 4L14.2 20L11.2 14.2Z M11.2 14.2L20.6 4"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 5.5H21V18.5H3Z M5.6 14.4H8.8L10.9 9.6L13.4 16.6L15.3 12.4H18.6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 2.6L20.4 6.1v7L12 21.4L3.6 13.1v-7Z M8.4 11.9l2.6 2.6 4.8-5.2"/></symbol>
+  <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.8 7.2h12.4v12.2H2.8Z M2.8 11.4h12.4 M17.6 3.4l4 4 M21.6 3.4l-4 4"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.8 4.8h18.4v11.6H2.8Z M9 20.2h6 M12 16.4v3.8 M6.4 12.6L9 9.6l2.2 2.2 3.2-3.8 3 3.2"/></symbol>
+  <symbol id="i-skin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 4h16v16H4Z M4 9h16 M9 9v11"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3.6l2.6 5.4 5.8.8-4.2 4.2 1 5.9L12 17.1l-5.2 2.8 1-5.9L3.6 9.8l5.8-.8Z"/></symbol>
+</defs></svg>
+
+<div class="wallpaper"></div>
+
+<header class="topbar">
+  <div class="tb-brand"><strong>WBOX</strong><span class="tb-tag">皮肤系统 v1.0.0 · 待确认</span></div>
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-view="v-skins" aria-pressed="true">皮肤管理</button>
+    <button class="tab" data-view="v-glass" aria-pressed="false">液态玻璃</button>
+    <button class="tab" data-view="v-plain" aria-pressed="false">极简</button>
+    <button class="tab" data-view="v-cost" aria-pressed="false">成本对照</button>
+    <button class="tab" data-view="v-spec" aria-pressed="false">制作规范</button>
+  </nav>
+  <div class="seg-theme" role="group" aria-label="外观">
+    <button data-theme-set="light" aria-pressed="true">浅色</button>
+    <button data-theme-set="dark" aria-pressed="false">深色</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ================= 皮肤管理 ================= -->
+<section class="view active" id="v-skins">
+  <p class="eyebrow">Skins</p>
+  <h2 class="sec">皮肤是插件，但不跑代码</h2>
+  <p class="lede">设置里多一页「外观」：已装皮肤按卡片列出，缩略图就是它穿在窗口上的样子，右上一枚勾表示当前在用。
+  皮肤与功能插件同一个安装入口，但两者边界不同——功能插件是守护进程里的 Python，皮肤只有 <span class="mono">skin.json</span> 和位图，
+  面板加载、只换外观，不动任何一行逻辑。</p>
+
+  <div class="stage stage-light">
+    <div class="app-window" style="width:600px">
+      <div class="titlebar" style="padding-left:24px">
+        <span class="wordmark" style="font-size:20px">外观</span>
+        <div class="wctrls" style="margin-left:auto">
+          <button class="wbtn" aria-label="最小化"><svg><use href="#i-min"/></svg></button>
+          <button class="wbtn" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+      <div class="app-body" style="padding:2px 14px 16px">
+        <div style="display:flex; flex-direction:column; gap:8px">
+
+          <div class="skin-card" role="radio" aria-checked="true">
+            <div class="skin-thumb">
+              <div class="mini mini-glass">
+                <div class="m-bar"></div>
+                <div class="m-list">
+                  <div class="m-row"><i class="m-dot"></i><i class="m-line"></i><i class="m-sw"></i></div>
+                  <div class="m-row"><i class="m-dot"></i><i class="m-line"></i><i class="m-sw"></i></div>
+                  <div class="m-row"><i class="m-dot"></i><i class="m-line"></i><i class="m-sw"></i></div>
+                </div>
+              </div>
+            </div>
+            <div class="skin-meta">
+              <div class="skin-name">液态玻璃 <span class="pill">标准</span></div>
+              <div class="skin-sub">内置 · v1.0.0 · 半透明 + 背景模糊 + 圆角阴影</div>
+            </div>
+            <svg class="tick"><use href="#i-check"/></svg>
+          </div>
+
+          <div class="skin-card" role="radio" aria-checked="false">
+            <div class="skin-thumb">
+              <div class="mini mini-flat">
+                <div class="m-bar"></div>
+                <div class="m-list">
+                  <div class="m-row"><i class="m-dot" style="width:3px;height:3px"></i><i class="m-line" style="height:1.5px"></i><i class="m-sw"></i></div>
+                  <div class="m-row"><i class="m-dot" style="width:3px;height:3px"></i><i class="m-line" style="height:1.5px"></i><i class="m-sw"></i></div>
+                  <div class="m-row"><i class="m-dot" style="width:3px;height:3px"></i><i class="m-line" style="height:1.5px"></i><i class="m-sw"></i></div>
+                  <div class="m-row"><i class="m-dot" style="width:3px;height:3px"></i><i class="m-line" style="height:1.5px"></i><i class="m-sw"></i></div>
+                </div>
+              </div>
+            </div>
+            <div class="skin-meta">
+              <div class="skin-name">极简 <span class="pill min">最省</span></div>
+              <div class="skin-sub">内置 · v1.0.0 · 纯色 + 方角 + 原生控件，零位图零动画</div>
+            </div>
+            <svg class="tick" style="opacity:0"><use href="#i-check"/></svg>
+          </div>
+
+          <button class="skin-add"><svg><use href="#i-plus"/></svg>安装皮肤（.wbskin）…</button>
+        </div>
+
+        <div style="margin-top:16px; padding:0 4px">
+          <div style="font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--t3); padding:6px 0 8px">明暗</div>
+          <div style="display:flex; gap:2px; padding:3px; border-radius:12px; background:var(--fill)">
+            <button class="tab" aria-pressed="true" style="flex:1; font-size:12.5px; padding:6px 0">跟随系统</button>
+            <button class="tab" aria-pressed="false" style="flex:1; font-size:12.5px; padding:6px 0">浅色</button>
+            <button class="tab" aria-pressed="false" style="flex:1; font-size:12.5px; padding:6px 0">深色</button>
+          </div>
+          <div style="font-size:11.5px; color:var(--t3); margin-top:10px; line-height:1.6">
+            皮肤目录 <span class="mono">%LOCALAPPDATA%\WBOX\skins\</span>，删掉一个目录就少一张卡，面板不报错。
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="cap">600 宽 · 卡片 112 × 63 缩略图 · 勾选态靠 1.5 px 描边而不是颜色（深色下也看得见）· 安装入口与功能插件的包校验共用一套规则</p>
+
+  <div class="note"><b>为什么皮肤不做成"插件进程"。</b>功能插件要拿到游戏进程、要提权、要读写配置，跑在守护进程里是合理的；
+  皮肤只影响画出来的像素，把它关在数据层里，第三方皮肤就永远不可能因为一行代码把守护搞崩。
+  皮肤包里出现 <span class="mono">.py / .dll / .exe</span> 一律拒绝安装，这条是硬规则。</div>
+</section>
+
+<!-- ================= 液态玻璃 ================= -->
+<section class="view" id="v-glass">
+  <p class="eyebrow">Skin 01 · Liquid Glass</p>
+  <h2 class="sec">液态玻璃：效果换成本，成本是明确的</h2>
+  <p class="lede">这一版就是 v3.4.0 的效果，原样保留成内置皮肤。它贵在三个地方：整窗磨砂位图、
+  每行自绘控件、悬停与弹出的过渡定时器。三样都是可见的、可数的，不是玄学。</p>
+
+  <div class="stage stage-light">
+    <div class="app-window">
+      <div class="titlebar">
+        <button class="tb-menu" aria-expanded="false">
+          <span class="wordmark">WBOX</span>
+          <svg class="chev"><use href="#i-chev"/></svg>
+        </button>
+        <button class="tb-add" aria-label="安装插件"><svg><use href="#i-plus"/></svg></button>
+        <div class="wctrls">
+          <button class="wbtn" aria-label="最小化"><svg><use href="#i-min"/></svg></button>
+          <button class="wbtn" aria-label="最大化"><svg><use href="#i-max"/></svg></button>
+          <button class="wbtn" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+      <div class="app-body">
+        <div class="list">
+          <div class="row"><svg class="fi"><use href="#i-plane"/></svg><span class="nm">小飞机联动</span>
+            <button class="sw" role="switch" aria-checked="true" aria-label="小飞机联动"></button></div>
+          <div class="row"><svg class="fi"><use href="#i-pulse"/></svg><span class="nm">游戏加加联动</span>
+            <button class="sw" role="switch" aria-checked="false" aria-label="游戏加加联动"></button></div>
+          <div class="row"><svg class="fi"><use href="#i-shield"/></svg><span class="nm">ACE 防护</span>
+            <button class="sw" role="switch" aria-checked="true" aria-label="ACE 防护"></button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <h3>它的三笔开销</h3>
+      <ul class="rules">
+        <li><b>整窗位图 3 张</b>：磨砂背景 640×332、圆角遮罩 640×332、阴影 680×372，合计 <span class="mono">640×332×4 + 640×332×4 + 680×372×4 = 2.6 MB</span>（Tk 内部每像素 4 字节）。tkinter 没有 blur，只能启动时截一次桌面、模糊一次、缓存住。</li>
+        <li><b>每行 4 个自绘元素</b>：发丝线、图标、名称、开关各一个 canvas item，5 行就是 20 个；改一次颜色就重画一次。</li>
+        <li><b>过渡定时器</b>：悬停 160 ms、弹出 200 ms，各一条 after 链。静止时归零，动画期间约 60 帧。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>它换到了什么</h3>
+      <p>半透明的层次感让 640×332 的小窗口看起来有纵深；圆角与阴影让窗口浮在桌面上而不是贴上去。</p>
+      <p>代价可接受的前提是<b>面板不是常驻窗口</b>——它是用户点开、改两下、关掉的窗口，不是每秒都在动的东西。
+      这也是为什么它适合当默认皮肤，而不适合当唯一皮肤。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 极简 ================= -->
+<section class="view" id="v-plain">
+  <p class="eyebrow">Skin 02 · Plain</p>
+  <h2 class="sec">极简：能省的全省，只留功能</h2>
+  <p class="lede">它不是为了"另一种风格"而存在，是为了"最不吃性能"而存在。四刀砍下去：不贴任何位图、不画任何圆角、
+  不起任何动画、不开任何浮层窗口。剩下全是原生控件，系统怎么画就怎么画。点一行，设置就在那一行底下摊开。</p>
+
+  <div class="stage stage-light">
+    <div class="plain-window" id="plain-demo" data-pane="list">
+      <div class="p-head">
+        <button class="p-back js-pane" data-pane="list" aria-label="返回列表"><svg><use href="#i-back"/></svg></button>
+        <span class="p-mark">WBOX</span>
+        <span class="p-crumb">设置</span>
+        <div class="grow"></div>
+        <button class="p-txt js-pane" data-pane="set">设置</button>
+        <button class="p-ico p-add" aria-label="安装插件"><svg><use href="#i-plus"/></svg></button>
+        <button class="p-ico" aria-label="最小化"><svg><use href="#i-min"/></svg></button>
+        <button class="p-close" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+      </div>
+      <div class="p-body">
+        <div class="p-row is-open" role="button" tabindex="0" aria-expanded="true">
+          <svg class="fi"><use href="#i-plane"/></svg><span class="nm">小飞机联动</span>
+          <button class="p-sw" role="switch" aria-checked="true" aria-label="小飞机联动"></button>
+          <span class="p-more"><svg><use href="#i-chev-r"/></svg></span>
+        </div>
+        <div class="p-expand">
+          <div class="p-item"><span class="lb">一并管理帧率组件</span><button class="p-sw sm" role="switch" aria-checked="true" aria-label="帧率组件"></button></div>
+          <div class="p-item"><span class="lb">关不掉时强制结束</span><button class="p-sw sm" role="switch" aria-checked="false" aria-label="强制结束"></button></div>
+          <div class="p-item"><span class="lb">小飞机程序</span><span class="val">留空 = 自动查找</span></div>
+          <button class="p-del">卸载此插件</button>
+        </div>
+
+        <div class="p-row" role="button" tabindex="0" aria-expanded="false">
+          <svg class="fi"><use href="#i-pulse"/></svg><span class="nm">游戏加加联动</span>
+          <button class="p-sw" role="switch" aria-checked="false" aria-label="游戏加加联动"></button>
+          <span class="p-more"><svg><use href="#i-chev-r"/></svg></span>
+        </div>
+        <div class="p-expand">
+          <div class="p-item"><span class="lb">一并关闭子程序</span><button class="p-sw sm" role="switch" aria-checked="true" aria-label="子程序"></button></div>
+          <div class="p-item"><span class="lb">游戏加加程序</span><span class="val">留空 = 自动查找</span></div>
+          <button class="p-del">卸载此插件</button>
+        </div>
+
+        <div class="p-row" role="button" tabindex="0" aria-expanded="false">
+          <svg class="fi"><use href="#i-shield"/></svg><span class="nm">ACE 防护</span>
+          <button class="p-sw" role="switch" aria-checked="true" aria-label="ACE 防护"></button>
+          <span class="p-more"><svg><use href="#i-chev-r"/></svg></span>
+        </div>
+        <div class="p-expand">
+          <div class="p-item"><span class="lb">游戏期间降低占用</span><button class="p-sw sm" role="switch" aria-checked="true" aria-label="降低占用"></button></div>
+          <div class="p-item"><span class="lb">开始前等待</span><span class="val">5 秒</span></div>
+          <button class="p-del">卸载此插件</button>
+        </div>
+
+        <div class="p-row" role="button" tabindex="0" aria-expanded="false">
+          <svg class="fi"><use href="#i-block"/></svg><span class="nm">弹窗拦截</span>
+          <button class="p-sw" role="switch" aria-checked="true" aria-label="弹窗拦截"></button>
+          <span class="p-more"><svg><use href="#i-chev-r"/></svg></span>
+        </div>
+        <div class="p-expand">
+          <div class="p-item"><span class="lb">静默拦截不提示</span><button class="p-sw sm" role="switch" aria-checked="false" aria-label="静默拦截"></button></div>
+          <div class="p-item"><span class="lb">每天最多拦截</span><span class="val">20 次</span></div>
+          <button class="p-del">卸载此插件</button>
+        </div>
+
+        <div class="p-row" role="button" tabindex="0" aria-expanded="false">
+          <svg class="fi"><use href="#i-monitor"/></svg><span class="nm">桌面监控</span>
+          <button class="p-sw" role="switch" aria-checked="true" aria-label="桌面监控"></button>
+          <span class="p-more"><svg><use href="#i-chev-r"/></svg></span>
+        </div>
+        <div class="p-expand">
+          <div class="p-item"><span class="lb">显示帧率</span><button class="p-sw sm" role="switch" aria-checked="true" aria-label="显示帧率"></button></div>
+          <div class="p-item"><span class="lb">采样间隔</span><span class="val">1000 ms</span></div>
+          <button class="p-del">卸载此插件</button>
+        </div>
+      </div>
+          <div class="p-set" role="region" aria-label="设置">
+          <div class="p-grp">外观</div>
+          <div class="p-line">
+            <span class="p-radio js-skin" role="radio" tabindex="0" aria-checked="false" aria-label="液态玻璃"></span>
+            <span class="lb">液态玻璃</span><span class="val">3 张位图 · 2.6 MB</span>
+          </div>
+          <div class="p-line">
+            <span class="p-radio js-skin" role="radio" tabindex="0" aria-checked="true" aria-label="极简"></span>
+            <span class="lb">极简</span><span class="val">当前</span>
+          </div>
+          <button class="p-line"><span class="lb">从文件安装皮肤…</span><span class="val">.wbskin</span></button>
+          <div class="p-grp">启动与守护</div>
+          <div class="p-line"><span class="lb">开机自动启动</span><button class="p-sw" role="switch" aria-checked="true" aria-label="开机自动启动"></button></div>
+          <div class="p-line"><span class="lb">启动后收进托盘</span><button class="p-sw" role="switch" aria-checked="true" aria-label="启动后收进托盘"></button></div>
+          <div class="p-line"><span class="lb">游戏结束提示</span><button class="p-sw" role="switch" aria-checked="false" aria-label="游戏结束提示"></button></div>
+          <div class="p-grp">内核</div>
+          <div class="p-line"><span class="lb">游戏检测间隔</span><span class="val">2000 ms</span></div>
+          <div class="p-line"><span class="lb">日志保留</span><span class="val">30 天</span></div>
+          <div class="p-grp">关于</div>
+          <div class="p-line"><span class="lb">WBOX</span><span class="val">2.6.0</span></div>
+          <button class="p-line"><span class="lb">打开日志目录</span></button>
+        </div>
+    </div>
+  </div>
+  <p class="cap">点任意一行看行内展开 · 标题栏「设置」把同一个窗口换成设置页（不开新窗口、不叠浮层、不建滚动容器），设置页比列表页高，窗口按内容长</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3>省在哪（每一条都能数）</h3>
+      <ul class="rules">
+        <li><b>位图 0 张</b>：背景是 <span class="mono">#FFFFFF</span> 一个颜色，没有任何 PhotoImage。</li>
+        <li><b>圆角 0、阴影 0</b>：方角省掉 mask 位图与 <span class="mono">SetWindowRgn</span> 调用，阴影省掉一次整窗 alpha 合成。</li>
+        <li><b>自绘元素 0</b>：标题、行、开关全是原生控件，Tk 自己维护，改状态只重画那一块。</li>
+        <li><b>定时器 0</b>：悬停只换底色，不做 160 ms 过渡；展开收合立刻生效。空闲时进程里没有一条 after 链。</li>
+        <li><b>浮层窗口 0</b>：设置项插在行下方，不新建 Toplevel，少一个窗口句柄与一套 z 序。</li>
+        <li><b>像素更少</b>：行高 44（玻璃 52）、字号 13（玻璃 15）、图标 16（玻璃 22），一屏少画约三成。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>它放弃的</h3>
+      <p>没有玻璃的通透感、没有圆角、没有弹出动画——这三点是明确的取舍，不是没做完。</p>
+      <p>它仍然保留品牌：WBOX 字标还在左上，图标还是那枚填充 W，只是尺寸降到 16 并改单色。</p>
+      <p>选它的人应该是因为「这破电脑风扇本来就响」，而不是因为它好看。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 成本对照 ================= -->
+<section class="view" id="v-cost">
+  <p class="eyebrow">Cost</p>
+  <h2 class="sec">两套皮肤的账，逐项列出来</h2>
+  <p class="lede">下面每一行都是设计阶段能锁死的量：位图几张、元素几个、定时器几条。
+  落到代码里这些数直接决定 GDI 对象、首帧耗时和空闲 CPU，不靠感觉。</p>
+
+  <table class="cmp">
+    <tr><th>项目</th><th>液态玻璃</th><th>极简</th><th>说明</th></tr>
+    <tr><td>整窗位图</td><td class="num">3 张 / 约 2.6 MB</td><td class="num win">0</td><td class="dim">磨砂 + 遮罩 + 阴影；极简全用纯色</td></tr>
+    <tr><td>位图内存</td><td class="num">≈ 2.6 MB 常驻</td><td class="num win">0</td><td class="dim">640×332 RGBA / 680×372 RGBA 各一份</td></tr>
+    <tr><td>每行自绘元素</td><td class="num">4 个 canvas item</td><td class="num win">0（原生控件）</td><td class="dim">5 行 = 20 个 item</td></tr>
+    <tr><td>过渡定时器</td><td class="num">2 条 after 链</td><td class="num win">0</td><td class="dim">悬停 160 ms / 弹出 200 ms</td></tr>
+    <tr><td>浮层窗口</td><td class="num">1 个 Toplevel</td><td class="num win">0（行内展开）</td><td class="dim">少一个窗口句柄与 z 序维护</td></tr>
+    <tr><td>窗口圆角处理</td><td class="num">mask 位图</td><td class="num win">方角</td><td class="dim">免 SetWindowRgn</td></tr>
+    <tr><td>行高 / 字号 / 图标</td><td class="num">52 / 15 / 22</td><td class="num win">44 / 13 / 16</td><td class="dim">一屏绘制像素约少三成</td></tr>
+    <tr><td>首帧预算</td><td class="num">≤ 180 ms</td><td class="num win">≤ 120 ms</td><td class="dim">含位图生成；极简无需生成</td></tr>
+    <tr><td>空闲 CPU 预算</td><td class="num">0.0 %（无动画时）</td><td class="num win">0.0 %</td><td class="dim">两边都不允许常驻定时器</td></tr>
+    <tr><td>私有内存预算</td><td class="num">≤ 32 MB</td><td class="num win">≤ 26 MB</td><td class="dim">面板进程整体，含 tkinter</td></tr>
+  </table>
+
+  <div class="cols" style="margin-top:22px">
+    <div class="card">
+      <h3>这组数怎么来的</h3>
+      <p>位图张数、item 数、定时器数、行高字号是<b>设计直接决定的量</b>，写死在 skin.json 里，可以做静态校验：
+      皮肤声明了 <span class="mono">bitmaps: 3</span> 却只给 2 个文件，安装时直接拒绝。</p>
+      <p>首帧、CPU、内存是<b>运行时预算</b>，落地后用两段脚本量：<span class="mono">design/perf-bench.py</span> 量首帧与每帧重绘，
+      <span class="mono">design/perf-probe.py</span> 量空闲 CPU 与浮层成本。脚本已写好，但要在<b>有显示的会话</b>里跑——无桌面时窗口不映射，
+      重绘是空操作，量出来的数会骗人。</p>
+    </div>
+    <div class="card">
+      <h3>为什么不做第三档"更炫"</h3>
+      <p>再往上就是背景壁纸、粒子、动态模糊——每一样都要整窗逐帧合成，代价是数量级上升，
+      对一个改两个开关就关掉的窗口没有意义。</p>
+      <p>皮肤分级只保留 <span class="mono">minimal / standard</span> 两级，<span class="mono">rich</span> 在规范里留了名字但暂不开放；
+      哪天真要做，必须先给出这张表的前三行数字。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 制作规范 ================= -->
+<section class="view" id="v-spec">
+  <p class="eyebrow">Skin Spec</p>
+  <h2 class="sec">皮肤制作规范 v1</h2>
+  <p class="lede">一份皮肤就是一个 zip（后缀 <span class="mono">.wbskin</span>），里面只有 JSON、位图和说明。
+  没有脚本、没有网络、没有注册表。下面是全部规则，写完照着校验就能装。</p>
+
+  <div class="cols">
+    <div class="card">
+      <h3>1 · 包结构</h3>
+      <pre class="code">liquid-glass.wbskin
+├─ skin.json          <span class="c">必需，唯一入口</span>
+├─ preview.png        <span class="c">必需，256×144，卡片缩略图</span>
+├─ README.md          <span class="c">可选，说明与作者</span>
+└─ assets/            <span class="c">可选，只允许 png</span>
+   ├─ backdrop.png
+   ├─ mask.png
+   └─ shadow.png</pre>
+      <p style="margin-top:10px">zip 根目录直接放 <span class="mono">skin.json</span>，不要套一层文件夹。
+      包内出现 <span class="mono">.py .pyc .dll .exe .bat .ps1</span> 任一后缀，安装器直接拒绝并留日志。</p>
+    </div>
+
+    <div class="card">
+      <h3>2 · skin.json 必需字段</h3>
+      <pre class="code">{
+  "id": "liquid-glass",        <span class="c">小写+连字符，装过不许改</span>
+  "name": "液态玻璃",
+  "version": "1.0.0",          <span class="c">三段式</span>
+  "api": 1,                    <span class="c">皮肤 API 版本</span>
+  "engine": "bitmap",          <span class="c">bitmap | flat</span>
+  "performance": "standard",   <span class="c">minimal | standard</span>
+  "chrome": "custom",          <span class="c">custom | system</span>
+  "author": "WBOX",
+  "metrics": { "row": 52, "font": 15, "icon": 22, "titlebar": 48 },
+  "radius": { "window": 26, "card": 20, "row": 14 },
+  "light": { ... },            <span class="c">必需，25 个 token</span>
+  "dark":  { ... }             <span class="c">可选，没有就复用 light</span>
+}</pre>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:22px">
+    <h3>3 · 颜色 token（25 个，一个都不能少）</h3>
+    <p>名字固定，含义固定，皮肤只改值。缺一个面板就回退到内置极简皮肤，并记一条 <span class="mono">skin.invalid</span> 日志。</p>
+    <pre class="code"><span class="c"># 文本四级</span>
+fg  t2  t3  t4
+<span class="c"># 线 / 填充 / 按压</span>
+hair  hair_strong  fill  fill_2  press
+<span class="c"># 卡片内凹与窗口底</span>
+inset  glass  glass_hi  glass_line  glass_edge
+<span class="c"># 开关</span>
+switch_off  knob  on  on_knob
+<span class="c"># 图标（应用图标与托盘）</span>
+icon_bg  icon_fg
+<span class="c"># 浮层（菜单 / 行设置）</span>
+menu_base  pop_base
+<span class="c"># 舞台（仅设计稿用，落地忽略）</span>
+amb0  amb1  amb2  amb3</pre>
+  </div>
+
+  <div class="cols" style="margin-top:22px">
+    <div class="card">
+      <h3>4 · 性能分级</h3>
+      <table class="cmp" style="margin-top:8px; font-size:12.5px">
+        <tr><th>档</th><th>硬限制</th></tr>
+        <tr><td class="num">minimal</td><td class="dim">位图 0 · 自绘元素 0 · 定时器 0 · 圆角 0 · 行高 ≤ 44</td></tr>
+        <tr><td class="num">standard</td><td class="dim">位图 ≤ 3 · 每行 item ≤ 6 · 定时器 ≤ 2 · 行高 ≤ 56</td></tr>
+      </table>
+      <p style="margin-top:10px">超过 standard 的限制只能申请 <span class="mono">rich</span>，而 rich 目前不开放安装。
+      分档不是荣誉，是给用户看的一句话：设置页那张卡片上会直接写「标准」或「最省」。</p>
+    </div>
+
+    <div class="card">
+      <h3>5 · 五条禁忌</h3>
+      <ul class="rules">
+        <li><b>不带代码</b>：皮肤不能执行任何东西，包括 <span class="mono">eval</span> 字符串和 <span class="mono">__import__</span> 路径。</li>
+        <li><b>不联网</b>：安装与加载全程离线，图片也不能是远程 URL。</li>
+        <li><b>不碰系统</b>：不写注册表、不读用户文件、不改窗口属性以外的东西。</li>
+        <li><b>不改布局语义</b>：皮肤只改颜色、圆角、字号、行高；不改控件顺序、不隐藏功能、不加按钮。</li>
+        <li><b>不超预算</b>：位图长边 ≤ 2048、单张 ≤ 512 KB、包总大小 ≤ 4 MB。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:22px">
+    <h3>6 · 校验与打包</h3>
+    <pre class="code"><span class="c"># 校验（安装器与面板共用同一份实现）</span>
+python -m wingman.skincheck liquid-glass.wbskin
+<span class="c"># 通过输出：ok id=liquid-glass api=1 tokens=25/25 engine=bitmap perf=standard</span>
+
+<span class="c"># 打包（把目录压成 .wbskin，根目录就是 skin.json）</span>
+python -m wingman.skinpack design\skins\liquid-glass -o dist\liquid-glass.wbskin</pre>
+    <p style="margin-top:10px">校验项固定为七条：zip 完整性、后缀白名单、skin.json 可解析、25 个 token 齐全、
+    位图尺寸与体积、性能档位匹配、id 不与功能插件重名。任一条不过就拒绝安装，并在
+    <span class="mono">guard.log</span> 留一行 <span class="mono">skin.reject reason=...</span>。</p>
+  </div>
+
+  <div class="note"><b>落地顺序建议：</b>先做极简皮肤（原生控件、零位图，最快能跑通数据链路），
+  再把手上的液态玻璃搬进 <span class="mono">plugins/skins/liquid-glass/</span>。
+  反过来做会把位图管线先钉死，之后想简化就得拆一遍。</div>
+</section>
+
+<footer>
+  <span>WBOX · 皮肤系统与极简版 v1.0.0 · 2026-11-17</span>
+  <span>基准脚本：design/perf-bench.py · design/perf-probe.py</span>
+  <span>待确认后才动 src/ 与 installer/</span>
+</footer>
+
+</main>
+
+<script>
+(function(){
+  var params = new URLSearchParams(location.search);
+
+  // 视图切换
+  document.querySelectorAll('.tab[data-view]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.tab[data-view]').forEach(function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      document.querySelectorAll('.view').forEach(function(v){
+        v.classList.toggle('active', v.id === btn.dataset.view);
+      });
+      window.scrollTo({top:0, behavior:'smooth'});
+    });
+  });
+
+  // 明暗
+  document.querySelectorAll('[data-theme-set]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('[data-theme-set]').forEach(function(b){
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+      document.documentElement.dataset.theme = btn.dataset.themeSet;
+    });
+  });
+
+  // 极简窗口：行内展开（无动画，立即生效）
+  document.querySelectorAll('.p-row').forEach(function(row){
+    row.addEventListener('click', function(e){
+      if(e.target.closest('.p-sw')) return;   // 开关不触发展开
+      var open = row.classList.contains('is-open');
+      document.querySelectorAll('.p-row.is-open').forEach(function(r){
+        r.classList.remove('is-open');
+        r.setAttribute('aria-expanded','false');
+      });
+      if(!open){
+        row.classList.add('is-open');
+        row.setAttribute('aria-expanded','true');
+      }
+    });
+  });
+
+
+  // 极简窗口：设置 = 同窗切页（不新开窗口、不叠浮层）
+  document.querySelectorAll('.js-pane').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var win = btn.closest('.plain-window');
+      if(win) win.dataset.pane = btn.dataset.pane;
+    });
+  });
+
+  // 极简皮肤单选
+  document.querySelectorAll('.js-skin').forEach(function(rad){
+    rad.addEventListener('click', function(){
+      document.querySelectorAll('.js-skin').forEach(function(r){
+        r.setAttribute('aria-checked', String(r === rad));
+      });
+    });
+  });
+
+  // 开关
+  document.querySelectorAll('[role="switch"]').forEach(function(sw){
+    sw.addEventListener('click', function(e){
+      e.stopPropagation();
+      sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  // 皮肤卡片单选
+  document.querySelectorAll('.skin-card').forEach(function(card){
+    card.addEventListener('click', function(){
+      document.querySelectorAll('.skin-card').forEach(function(c){
+        var on = c === card;
+        c.setAttribute('aria-checked', String(on));
+        var tick = c.querySelector('.tick');
+        if(tick) tick.style.opacity = on ? '1' : '0';
+      });
+    });
+  });
+
+  // 深链
+  if(params.get('view')){
+    var t = document.querySelector('.tab[data-view="' + params.get('view') + '"]');
+    if(t) t.click();
+  }
+  var th = params.get('theme');
+  if(th === 'dark' || th === 'light'){
+    var b = document.querySelector('[data-theme-set="' + th + '"]');
+    if(b) b.click();
+  }
+  if(params.get('pane')){
+    var pw = document.querySelector('#plain-demo');
+    if(pw) pw.dataset.pane = params.get('pane');
+  }
+  if(params.get('static')) document.body.classList.add('static');
+})();
+</script>
+</body>
+</html>

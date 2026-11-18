@@ -1,0 +1,211 @@
+<style>
+#view-setup,#view-copy,#view-confirm{font-family:"Microsoft YaHei UI","Segoe UI",sans-serif;color:var(--fg);font-size:12px;line-height:1.5}
+#view-setup,#view-setup *,#view-setup *::before,#view-setup *::after,#view-copy,#view-copy *,#view-copy *::before,#view-copy *::after,#view-confirm,#view-confirm *,#view-confirm *::before,#view-confirm *::after{box-sizing:border-box}
+#view-setup .pane,#view-copy .pane,#view-confirm .pane{padding:24px}
+#view-setup .cap,#view-copy .cap,#view-confirm .cap{font-size:16px;font-weight:700;margin:0 0 4px;line-height:22px}
+#view-setup .sub,#view-copy .sub,#view-confirm .sub{color:var(--t3);font-size:12px;margin:0 0 20px}
+#view-setup .ic,#view-confirm .ic{width:16px;height:16px;display:inline-block;vertical-align:middle;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.6}
+#view-setup .bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+#view-setup .bar .lab{color:var(--t3);margin-right:8px}
+#view-setup .st{appearance:none;-webkit-appearance:none;border:1px solid var(--border);background:var(--bg);color:var(--t2);height:28px;padding:0 14px;font:12px "Microsoft YaHei UI","Segoe UI",sans-serif;cursor:pointer}
+#view-setup .st:hover{background:var(--hover)}
+#view-setup .st.on{background:var(--fg);color:var(--invfg);border-color:var(--fg);font-weight:700}
+#view-setup .win{position:relative;width:660px;max-width:100%;height:520px;background:var(--bg);border:1px solid var(--border);display:flex;flex-direction:column}
+#view-setup .hd{flex:0 0 64px;height:64px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--line)}
+#view-setup .hd .ic{width:28px;height:28px;stroke-width:1.4}
+#view-setup .hd .tx{flex:1;min-width:0}
+#view-setup .hd .t{font-size:22px;font-weight:700;line-height:28px}
+#view-setup .hd .s{font-size:12px;color:var(--t3);line-height:16px}
+#view-setup .hd .v{font-size:11px;color:var(--t3);align-self:flex-start;margin-top:14px}
+#view-setup .bd{flex:1;min-height:0;padding:16px 24px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line) var(--bg)}
+#view-setup .bd::-webkit-scrollbar{width:8px;height:8px}
+#view-setup .bd::-webkit-scrollbar-thumb{background:var(--line)}
+#view-setup .bd::-webkit-scrollbar-track{background:var(--bg)}
+#view-setup .btn{appearance:none;-webkit-appearance:none;height:32px;padding:0 16px;font:12px "Microsoft YaHei UI","Segoe UI",sans-serif;cursor:pointer;white-space:nowrap}
+#view-setup .b1{background:var(--fg);color:var(--invfg);border:1px solid var(--fg);font-weight:700}
+#view-setup .b2{background:transparent;color:var(--fg);border:1px solid var(--border)}
+#view-setup .b2:hover{background:var(--hover)}
+#view-setup .b1:disabled{background:var(--hover);color:var(--t3);border-color:var(--line);cursor:not-allowed}
+#view-setup .pl{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+#view-setup .pl .lb{color:var(--t2);white-space:nowrap}
+#view-setup .fi{flex:1;min-width:0;height:32px;appearance:none;-webkit-appearance:none;border:1px solid var(--border);background:var(--bg);color:var(--fg);padding:0 10px;font:12px Consolas,"Microsoft YaHei UI",sans-serif;outline:none}
+#view-setup .fi:focus{border-color:var(--fg)}
+#view-setup .cks{display:flex;gap:24px;margin-bottom:10px;flex-wrap:wrap}
+#view-setup .ck,#view-confirm .it{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--t2);line-height:16px}
+#view-setup .cb,#view-confirm .cb{appearance:none;-webkit-appearance:none;position:relative;width:16px;height:16px;flex:0 0 16px;margin:0;border:1px solid var(--border);background:var(--bg);cursor:pointer}
+#view-setup .cb:checked,#view-confirm .cb:checked{border-color:var(--fg)}
+#view-setup .cb:checked::after,#view-confirm .cb:checked::after{content:"";position:absolute;left:5px;top:1px;width:4px;height:9px;border:solid var(--fg);border-width:0 1px 1px 0;transform:rotate(45deg)}
+#view-setup .dt{margin-bottom:10px}
+#view-setup .dt .m{display:flex;align-items:center;gap:6px;line-height:16px}
+#view-setup .dt .m .ic{width:14px;height:14px}
+#view-setup .dt .p{font-size:11px;color:var(--t3);line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#view-setup .ph{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
+#view-setup .ph .t{font-size:12px;font-weight:700}
+#view-setup .ph .n{font-size:11px;color:var(--t3)}
+#view-setup .tk{height:4px;background:var(--line);margin-bottom:10px}
+#view-setup .tk .fl{height:4px;width:0;background:var(--fg)}
+#view-setup .sn{display:none;font-size:11px;color:var(--t2);line-height:14px;margin-bottom:8px}
+#view-setup.s-done .sn,#view-setup.s-fail .sn{display:block}
+#view-setup .dlg{display:none;width:400px;max-width:100%;border:1px solid var(--border);background:var(--bg);padding:10px;margin-bottom:8px}
+#view-setup.s-done .dlg,#view-setup.s-fail .dlg{display:block}
+#view-setup .dlg .dt2{font-size:14px;font-weight:700;line-height:18px;margin-bottom:4px}
+#view-setup .dlg .db{font-size:12px;color:var(--t2);line-height:16px;margin-bottom:8px}
+#view-setup .dlg .df{display:flex;justify-content:flex-end}
+#view-setup .dlg .df .btn{height:26px}
+#view-setup .lg{height:160px;background:var(--hover);border:1px solid var(--line);padding:16px;overflow:hidden;font:11px/14px Consolas,"Microsoft YaHei UI",sans-serif;color:var(--t2)}
+#view-setup .lg div{height:14px;line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#view-setup.s-done .pl,#view-setup.s-done .cks,#view-setup.s-done .dt,#view-setup.s-fail .pl,#view-setup.s-fail .cks,#view-setup.s-fail .dt{display:none}
+#view-setup .ft{flex:0 0 80px;height:80px;padding:24px;display:flex;align-items:flex-end;justify-content:flex-end;gap:12px;border-top:1px solid var(--line)}
+#view-copy .tb{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}
+#view-copy .tb th,#view-copy .tb td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top;line-height:18px;word-break:break-word}
+#view-copy .tb th{background:var(--hover);font-weight:700;color:var(--t2)}
+#view-copy .tb th .tag{font-weight:400;color:var(--t3)}
+#view-copy .tb td.old{color:var(--t3)}
+#view-copy .tb td.new{color:var(--fg)}
+#view-copy .tb td.loc{color:var(--t3)}
+#view-copy .tb tr.grp td{background:var(--bg);color:var(--fg);font-weight:700;letter-spacing:1px}
+#view-copy .tb tr.grp td span{font-weight:400;color:var(--t3);letter-spacing:0}
+#view-confirm .grp{margin-bottom:20px}
+#view-confirm .gh{font-size:13px;font-weight:700;padding:0 0 8px;border-bottom:1px solid var(--line);margin-bottom:2px}
+#view-confirm .it{align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);line-height:18px}
+#view-confirm .it:last-of-type{border-bottom:1px solid var(--line)}
+#view-confirm .it .no{color:var(--t3);width:22px;flex:0 0 22px}
+#view-confirm .it .tx{flex:1}
+#view-confirm .it code{font:11px Consolas,"Microsoft YaHei UI",sans-serif;color:var(--fg)}
+#view-confirm .foot{margin-top:16px;padding:12px;border:1px solid var(--line);background:var(--hover);color:var(--t3);font-size:12px}
+</style>
+
+<section id="view-setup" data-view="setup">
+<div class="pane">
+<div class="cap">安装器 · 四态预览</div>
+<div class="sub">660 × 520 · 自绘控件 · 头部与底部跨状态保持稳定，仅中部切换</div>
+<div class="bar"><span class="lab">状态演示</span><button type="button" class="st on" data-state="idle">首屏</button><button type="button" class="st" data-state="busy">安装中</button><button type="button" class="st" data-state="done">完成</button><button type="button" class="st" data-state="fail">失败</button></div>
+<div class="win">
+<div class="hd">
+<svg class="ic"><use href="#ic-mark-new"></use></svg>
+<div class="tx"><div class="t">安装 僚机 Wingman</div><div class="s">按需启用功能，随时可以卸载。</div></div>
+<div class="v">v2.1.1</div>
+</div>
+<div class="bd">
+<div class="pl"><span class="lb">安装到</span><input class="fi" type="text" readonly value="C:\Program Files\Wingman" /><button type="button" class="btn b2">浏览…</button></div>
+<div class="cks">
+<label class="ck"><input class="cb" type="checkbox" checked /><span>开机自动运行守护</span></label>
+<label class="ck"><input class="cb" type="checkbox" checked /><span>安装完成后立即运行</span></label>
+</div>
+<div class="dt"><div class="m"><svg class="ic"><use href="#ic-check"></use></svg><span>已找到 MSI Afterburner</span></div><div class="p" title="C:\Program Files (x86)\MSI Afterburner\MSIAfterburner.exe">C:\Program Files (x86)\MSI Afterburner\MSIAfterburner.exe</div></div>
+<div class="ph"><span class="t">安装进度</span><span class="n">0%</span></div>
+<div class="tk"><div class="fl"></div></div>
+<div class="sn"></div>
+<div class="dlg"><div class="dt2"></div><div class="db"></div><div class="df"><button type="button" class="btn b1"></button></div></div>
+<div class="lg"></div>
+</div>
+<div class="ft">
+<button type="button" class="btn b2" id="wg-exit" style="display:none">退出</button>
+<button type="button" class="btn b2" id="wg-2">退出</button>
+<button type="button" class="btn b1" id="wg-1">安装</button>
+</div>
+</div>
+</div>
+</section>
+
+<section id="view-copy" data-view="copy">
+<div class="pane">
+<div class="cap">新旧文案对照</div>
+<div class="sub">位置 / 现文 / 新文 · 四组共 31 条 · 「现文」列为旧版</div>
+<table class="tb">
+<thead><tr><th style="width:88px">位置</th><th style="width:44%">现文 <span class="tag">旧</span></th><th>新文</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="3">面板 <span>· 8 条</span></td></tr>
+<tr><td class="loc">面板</td><td class="old">小飞机关联启动</td><td class="new">小飞机联动</td></tr>
+<tr><td class="loc">面板</td><td class="old">弹窗关闭</td><td class="new">弹窗拦截</td></tr>
+<tr><td class="loc">面板</td><td class="old">含 RTSS/按配置/切换即时生效 的简介</td><td class="new">游戏启动时自动打开 MSI Afterburner，退出游戏后一并关闭。改动立即生效。</td></tr>
+<tr><td class="loc">面板</td><td class="old">含 GamePP/会话/路径自动探测 的简介</td><td class="new">游戏启动时自动打开游戏加加，退出后只关掉这次打开的程序。改动立即生效。</td></tr>
+<tr><td class="loc">面板</td><td class="old">含 CPU/IO/四道闸门/随时可还原 的简介</td><td class="new">游戏运行中降低反作弊程序对电脑资源的占用，退出游戏后自动恢复。需要管理员权限。</td></tr>
+<tr><td class="loc">面板</td><td class="old">含 WeGame/ClientBrowser/进程树 的简介</td><td class="new">退出游戏后自动关掉弹出的直播窗口，并清理残留的后台程序，避免常驻。</td></tr>
+<tr><td class="loc">面板</td><td class="old">需要管理员权限（单行）</td><td class="new">追加「右键程序图标，以管理员身份重新打开后即可修改」</td></tr>
+<tr><td class="loc">面板</td><td class="old">含 plugins\ 与重开本面板 的零插件提示</td><td class="new">还没有安装任何插件 / 点右上角 ＋ 安装，或在齿轮菜单里重新扫描</td></tr>
+<tr class="grp"><td colspan="3">菜单 <span>· 8 条</span></td></tr>
+<tr><td class="loc">菜单</td><td class="old">开机自动启动守护</td><td class="new">开机自启</td></tr>
+<tr><td class="loc">菜单</td><td class="old">重扫游戏库</td><td class="new">重新扫描游戏</td></tr>
+<tr><td class="loc">菜单</td><td class="old">查看运行日志</td><td class="new">查看日志</td></tr>
+<tr><td class="loc">菜单</td><td class="old">插件</td><td class="new">已安装插件</td></tr>
+<tr><td class="loc">菜单</td><td class="old">v2.0.0 · 正常 · 已启用 · 需要管理员</td><td class="new">正常 · 已启用 · 需管理员</td></tr>
+<tr><td class="loc">菜单</td><td class="old">纯白 / 纯黑</td><td class="new">浅色主题 / 深色主题</td></tr>
+<tr><td class="loc">菜单</td><td class="old">关闭</td><td class="new">关闭菜单</td></tr>
+<tr><td class="loc">菜单</td><td class="old">v2.1.1 · 开关即时生效</td><td class="new">v2.1.1 · 改动立即生效</td></tr>
+<tr class="grp"><td colspan="3">弹框 <span>· 5 条</span></td></tr>
+<tr><td class="loc">弹框</td><td class="old">设置已写入 config.json。守护会在 2 秒内自动加载</td><td class="new">设置已保存，无需重启。</td></tr>
+<tr><td class="loc">弹框</td><td class="old">添加插件（.zip 包）</td><td class="new">选择插件文件</td></tr>
+<tr><td class="loc">弹框</td><td class="old">移进备份区（不硬删）、2 秒热重载</td><td class="new">卸载后这个插件会停止工作，文件会先备份而不是直接删除，之后可以找回。</td></tr>
+<tr><td class="loc">弹框</td><td class="old">repr(e)</td><td class="new">一句人话 +「详情可查看日志」</td></tr>
+<tr><td class="loc">弹框</td><td class="old">确定 / 是</td><td class="new">卸载 / 覆盖安装</td></tr>
+<tr class="grp"><td colspan="3">安装器 <span>· 10 条</span></td></tr>
+<tr><td class="loc">安装器</td><td class="old">小飞机关联启动 · ACE 防护 · 弹窗关闭（写死三功能）</td><td class="new">按需启用功能，随时可以卸载。</td></tr>
+<tr><td class="loc">安装器</td><td class="old">僚机 Wingman 安装程序 2.1.1</td><td class="new">僚机 Wingman 安装</td></tr>
+<tr><td class="loc">安装器</td><td class="old">安装目录</td><td class="new">安装到</td></tr>
+<tr><td class="loc">安装器</td><td class="old">开机自动启动守护（计划任务）</td><td class="new">开机自动运行守护</td></tr>
+<tr><td class="loc">安装器</td><td class="old">安装完成后立即启动</td><td class="new">安装完成后立即运行</td></tr>
+<tr><td class="loc">安装器</td><td class="old">小飞机：绝对路径</td><td class="new">已找到 MSI Afterburner</td></tr>
+<tr><td class="loc">安装器</td><td class="old">未找到，装完后可在设置面板或 config.json 里指定</td><td class="new">装好后可在设置面板里指定，也可以先跳过。</td></tr>
+<tr><td class="loc">安装器</td><td class="old">安装过程</td><td class="new">安装进度</td></tr>
+<tr><td class="loc">安装器</td><td class="old">重新安装（进行中/完成态）</td><td class="new">安装中…（禁用）/ 完成</td></tr>
+<tr><td class="loc">安装器</td><td class="old">失败 / repr(e)</td><td class="new">安装未完成 / 安装没能完成，文件没有被改动。可以重试一次…</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="view-confirm" data-view="confirm">
+<div class="pane">
+<div class="cap">待确认清单</div>
+<div class="sub">视觉可协商 8 项 · 文案建议改 6 项</div>
+<div class="grp">
+<div class="gh">视觉可协商 · 8 项</div>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">01</span><span class="tx">品牌盾 V 形双翼是否替换旧上箭头（影响 ico / 托盘 / 安装包图标）</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">02</span><span class="tx">四功能图标改名 <code>plane</code>/<code>pulse</code> 需改两个插件 <code>icon</code> 字段，是否保留 <code>shield</code>/<code>block</code> 原名</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">03</span><span class="tx">新增 <code>folder</code>/<code>admin</code> 是否本期落地</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">04</span><span class="tx">开关 <code>40×22 → 40×24</code>、行高 <code>48 → 40/56</code></span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">05</span><span class="tx">齿轮菜单宽 <code>280 → 288</code>、Tooltip 最大宽 <code>320 → 288</code></span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">06</span><span class="tx">字号 6 级是否合并为 5 级</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">07</span><span class="tx">安装器 <code>660×520 → 664×520</code> 按 8px 栅格</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">08</span><span class="tx"><code>dot</code> 微实心例外是否改 4×4 方点</span></label>
+</div>
+<div class="grp">
+<div class="gh">文案建议改 · 6 项</div>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">01</span><span class="tx">小飞机联动 / 弹窗拦截 改名</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">02</span><span class="tx">浅色主题 / 深色主题</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">03</span><span class="tx">保存成功改非模态轻提示</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">04</span><span class="tx">菜单插件 hint 去掉版本号</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">05</span><span class="tx">安装器标题与进度标题随状态切换</span></label>
+<label class="it"><input class="cb" type="checkbox" /><span class="no">06</span><span class="tx">卸载内置插件降级为「不可卸载、只给开关」（涉及行为改动）</span></label>
+</div>
+<div class="foot">勾选后告诉主理人即可，本页不持久化</div>
+</div>
+</section>
+
+<script>
+(function(){
+var root=document.getElementById('view-setup');if(!root)return;
+var q=function(s){return root.querySelector(s);};
+var win=q('.win'),btns=root.querySelectorAll('.st'),pht=q('.ph .t'),phn=q('.ph .n'),fill=q('.tk .fl'),sn=q('.sn'),log=q('.lg'),b1=q('#wg-1'),b2=q('#wg-2'),bx=q('#wg-exit'),dt2=q('.dlg .dt2'),db=q('.dlg .db'),dbtn=q('.dlg .df .btn');
+var S={
+idle:{ph:'安装进度',n:'0%',pct:0,sn:'',log:['准备就绪，点「安装」开始。','','','','','','','',''],b1:'安装',dis:false,b2:'退出',exit:false,dlg:false},
+busy:{ph:'正在安装',n:'60%',pct:60,sn:'',log:['正在检查安装环境…','正在复制程序文件…','正在写入 config.json…','正在配置插件…','正在设置开机自动运行…','正在注册守护计划任务…','正在探测 MSI Afterburner…','正在生成开始菜单快捷方式…','正在收尾，请稍候…'],b1:'安装中…',dis:true,b2:'退出',exit:false,dlg:false},
+done:{ph:'安装完成',n:'100%',pct:100,sn:'现在可以打开设置，按需启用需要的功能。',log:['已检查安装环境','已复制程序文件','已写入 config.json','已配置插件','已设置开机自动运行','已注册守护计划任务','已找到 MSI Afterburner','安装完成，已装到 C:\\Program Files\\Wingman。',''],b1:'完成',dis:false,b2:'打开设置',exit:false,dlg:true,dt2:'安装完成',db:'发生了什么：已装到 C:\\Program Files\\Wingman。下一步：现在可以打开设置，按需启用需要的功能。',dbtn:'打开设置'},
+fail:{ph:'安装未完成',n:'30%',pct:30,sn:'安装没能完成，文件没有被改动。可以重试一次，或点「查看详情」看具体原因。',log:['已检查安装环境','正在复制程序文件…','写入文件时没能继续','安装没能完成，文件没有被改动。','可以重试一次，或点「查看详情」看具体原因。','','','',''],b1:'重试',dis:false,b2:'查看详情',exit:true,dlg:true,dt2:'未完成',db:'发生了什么：安装没能完成，文件没有被改动。下一步：可以重试一次，或点「查看详情」看具体原因。',dbtn:'查看详情'}
+};
+var CL=['s-idle','s-busy','s-done','s-fail'];
+function render(k){
+var s=S[k];if(!s)return;
+CL.forEach(function(c){root.classList.remove(c);});root.classList.add('s-'+k);
+pht.textContent=s.ph;phn.textContent=s.n;fill.style.width=s.pct+'%';sn.textContent=s.sn;
+log.textContent='';
+for(var i=0;i<s.log.length;i++){var d=document.createElement('div');d.textContent=s.log[i]||String.fromCharCode(160);log.appendChild(d);}
+b1.textContent=s.b1;b1.disabled=s.dis;b2.textContent=s.b2;bx.style.display=s.exit?'':'none';
+if(s.dlg){dt2.textContent=s.dt2;db.textContent=s.db;dbtn.textContent=s.dbtn;}
+for(var j=0;j<btns.length;j++){btns[j].classList.toggle('on',btns[j].getAttribute('data-state')===k);}
+}
+for(var i=0;i<btns.length;i++){(function(b){b.addEventListener('click',function(){render(b.getAttribute('data-state'));});})(btns[i]);}
+render('idle');
+})();
+</script>

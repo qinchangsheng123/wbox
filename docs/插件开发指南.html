@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WBOX 插件开发指南</title>
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0 auto; padding: 40px 28px 80px; max-width: 960px;
+  font: 15px/1.72 -apple-system, "Segoe UI", "Microsoft YaHei",
+        "PingFang SC", "Hiragino Sans GB", sans-serif;
+  color: #1d2126; background: #ffffff; word-wrap: break-word;
+}
+h1 { font-size: 27px; margin: 0 0 6px; letter-spacing: -.2px; }
+h2 { font-size: 21px; margin: 40px 0 12px; padding-bottom: 7px;
+     border-bottom: 1px solid #e6e8eb; }
+h3 { font-size: 17px; margin: 26px 0 8px; }
+h4 { font-size: 15px; margin: 20px 0 6px; }
+p { margin: 10px 0; }
+a { color: #1668c1; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+       font-size: 13px; background: #f3f4f6; border: 1px solid #e6e8eb;
+       border-radius: 4px; padding: .1em .35em; }
+pre { background: #f7f8fa; border: 1px solid #e6e8eb; border-radius: 8px;
+      padding: 14px 16px; overflow: auto; }
+pre code { background: none; border: 0; padding: 0; font-size: 13px;
+           line-height: 1.6; white-space: pre; }
+blockquote { margin: 16px 0; padding: 12px 18px; border-left: 4px solid #e8a33d;
+             background: #fffaf1; border-radius: 0 8px 8px 0; }
+blockquote p { margin: 6px 0; }
+blockquote strong { color: #8a4b00; }
+.table-wrap { overflow-x: auto; margin: 14px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { border: 1px solid #e6e8eb; padding: 8px 11px; text-align: left;
+         vertical-align: top; }
+th { background: #f7f8fa; font-weight: 600; }
+hr { border: 0; border-top: 1px solid #e6e8eb; margin: 30px 0; }
+ul, ol { margin: 10px 0; padding-left: 24px; }
+li { margin: 4px 0; }
+.toc { border: 1px solid #e6e8eb; border-radius: 10px; padding: 14px 20px;
+       margin: 22px 0 30px; background: #fbfcfd; }
+.toc-title { font-size: 13px; font-weight: 600; color: #5b6470;
+             letter-spacing: .06em; margin-bottom: 6px; }
+.toc ol { margin: 4px 0; padding-left: 22px; }
+.toc a { color: #34404d; }
+.meta { color: #6b7480; font-size: 13px; margin: 0 0 4px; }
+.warn-mark { color: #a34a00; }
+@media (prefers-color-scheme: dark) {
+  body { color: #d7dbe0; background: #14171a; }
+  h2, hr { border-color: #2a3037; }
+  code { background: #1d2226; border-color: #2a3037; }
+  pre { background: #1a1f23; border-color: #2a3037; }
+  blockquote { background: #241d10; border-left-color: #c98a2e; }
+  blockquote strong { color: #f0b75a; }
+  th { background: #1a1f23; }
+  th, td { border-color: #2a3037; }
+  .toc { background: #1a1f23; border-color: #2a3037; }
+  .toc a { color: #b8c2cc; }
+  a { color: #62a8f0; }
+}
+@media print {
+  body { max-width: none; padding: 0; }
+  pre, blockquote, table { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<p class="meta">WBOX 插件开发指南 · 随安装包分发 · 与 WBOX 版本同步更新</p>
+<nav class="toc"><div class="toc-title">目录</div><ol><li><a href="#0-先读这一段-安全边界">0. 先读这一段：安全边界</a></li><li><a href="#1-插件是什么">1. 插件是什么</a></li><li><a href="#2-目录结构与命名">2. 目录结构与命名</a></li><li><a href="#3-plugin-json-字段全集">3. <code>plugin.json</code> 字段全集</a></li><li><a href="#4-python-api">4. Python API</a></li><li><a href="#5-钩子与调度">5. 钩子与调度</a></li><li><a href="#6-图标">6. 图标</a></li><li><a href="#7-配置">7. 配置</a></li><li><a href="#8-打包与分发">8. 打包与分发</a></li><li><a href="#9-调试">9. 调试</a></li><li><a href="#10-常见错误与排查">10. 常见错误与排查</a></li><li><a href="#11-版本与兼容">11. 版本与兼容</a></li><li><a href="#12-参考实现">12. 参考实现</a></li><li><a href="#附录-字段速查-一页版">附录：字段速查（一页版）</a></li></ol></nav>
+<h1 id="wbox-插件开发规范">WBOX 插件开发规范</h1>
+<p>适用版本：<strong>WBOX v2.11.3</strong>，插件 API 版本 <strong><code>API_VERSION = 1</code></strong> 文档状态：与 <code>src/plugin_api.py</code>、<code>src/plugin_host.py</code>、<code>src/plugin_package.py</code>、 <code>src/guard_core.py</code> 的实际行为逐条对齐（2026-11-17 校对，2026-11-18 同步 v2.11.0 系统标识全量改名；同日 v2.11.3 补 <code>publisher</code> / <code>homepage</code> / <code>permissions</code> 三个展示字段与 <code>.sha256</code> 侧车校验）。面板操作说明按 WBOX 界面写成：标题栏字标是 <strong>WBOX</strong>；v2.11.0 起系统标识（exe、安装目录、计划任务、注册表键、管道/互斥体、 备份目录）也统一 WBOX——旧 Wingman 安装由安装器自动迁移。</p>
+<hr>
+<h2 id="0-先读这一段-安全边界">0. 先读这一段：安全边界</h2>
+<blockquote><p><strong>插件不是配置项，是代码。</strong></p><p>插件运行在<strong>以管理员权限常驻的守护进程内部</strong>，与内核共用同一个 Python 解释器、 同一个进程、同一个令牌。宿主不提供任何沙箱、不限制任何系统调用： 插件可以读写任意文件、改注册表、结束任意进程、发起网络请求、加载任意 DLL。</p><p>换句话说：<strong>装一个插件 = 允许它在这台机器上做管理员能做的一切。</strong></p><p>因此：</p><ul><li>只安装你自己写的、或你完全信任其作者的插件；</li><li>不要&quot;试一下&quot;来源不明的插件包；</li><li>任何人都不要以&quot;给用户装个插件&quot;为名义分发来路不明的代码。</li></ul><p>宿主确实做了三件<strong>隔离</strong>的事，但它们是为了<strong>稳定性</strong>，不是安全： 钩子异常被 <code>except BaseException</code> 吞掉（插件崩了守护不死）、单插件失败不影响 其它插件、插件目录不进 <code>sys.path</code>（避免 <code>plugins\x\json.py</code> 劫持标准库导入）。 这三条都挡不住恶意代码。</p></blockquote>
+<p>v2.11.3 起安装框把可判断的东西摆出来（<strong>都是线索，不是担保</strong>）：</p>
+<div class="table-wrap"><table><thead><tr><th>展示项</th><th>来自</th><th>能证明什么</th><th>不能证明什么</th></tr></thead><tbody><tr><td>发布者 / 来源</td><td>manifest <code>publisher</code> / <code>homepage</code></td><td>插件<strong>自称</strong>是谁</td><td>真实作者（没有签名）</td></tr><tr><td>声明权限</td><td>manifest <code>permissions</code></td><td>插件<strong>声称</strong>要碰什么</td><td>实际行为（内核不做限制）</td></tr><tr><td>包完整性</td><td>同目录 <code>&lt;包名&gt;.zip.sha256</code></td><td>和发布时是同一份文件</td><td>发布者身份（侧车可被一起替换）</td></tr><tr><td>SHA-256</td><td>现场计算</td><td>你手上的这个包是什么</td><td>—</td></tr></tbody></table></div>
+<p>所以判断标准只有一条：<strong>这个包的来源你是否信得过。</strong> 没写 <code>publisher</code> 的包， 界面会明说「来源不明」；<code>builtin: true</code> 不算任何担保（那个字段谁都能写）。</p>
+<p>如果你只是想让游戏联动某个程序，先看现有五个内置插件能不能改配置解决； 写代码是最后手段。</p>
+<hr>
+<h2 id="1-插件是什么">1. 插件是什么</h2>
+<p>一个插件就是 <code>plugins\&lt;id&gt;\</code> 目录下的一份 <code>plugin.json</code> 加一个 Python 文件。 守护进程每轮扫描这个目录，把 manifest 合法的插件 <code>import</code> 进来、实例化、按钩子调用。</p>
+<div class="table-wrap"><table><thead><tr><th>事实</th><th>说明</th></tr></thead><tbody><tr><td>运行宿主</td><td>守护进程（<code>WBOX.exe --guard</code>），管理员令牌</td></tr><tr><td>运行时机</td><td>守护冷启动、以及面板装/卸插件后的热重载（仅会话 idle 时）</td></tr><tr><td>执行模型</td><td>单线程同步调用，无并发保护，<strong>不要</strong>在钩子里阻塞</td></tr><tr><td>崩溃影响</td><td>只影响自己：异常被捕获、计数、降级，守护继续跑</td></tr><tr><td>权限</td><td>与守护相同（管理员）。没有额外权限，也没有任何限制</td></tr><tr><td>卸载</td><td>插件设置浮层底部「卸载此插件」/ 删目录。目录被整体移入备份区，不硬删</td></tr></tbody></table></div>
+<p>插件<strong>不能</strong>做的事（宿主会拦，或设计上不提供）：</p>
+<ul><li>不能在面板进程里产生副作用（面板也会 <code>import</code> 你的模块，见 §5.1）；</li><li>不能调用 <code>sys.exit()</code>（会被 <code>except BaseException</code> 拦下，但会记为一次异常）；</li><li>不能写内核保留的配置键（见 §7.4）；</li><li>不能把自己的目录塞进 <code>sys.path</code>（宿主用合成包名，不污染全局导入）。</li></ul>
+<hr>
+<h2 id="2-目录结构与命名">2. 目录结构与命名</h2>
+<pre><code>&lt;安装目录&gt;\                     ← 一般是 C:\Program Files\WBOX
+├─ WBOX.exe
+├─ config.json
+├─ guard.log
+└─ plugins\
+   ├─ afterburner\             ← 内置插件
+   ├─ ace\
+   ├─ gamepp\
+   ├─ popup\
+   └─ &lt;你的 id&gt;\               ← 插件目录名必须等于 manifest 的 id
+      ├─ plugin.json           必填
+      ├─ plugin.py             默认入口（可由 entry 改）
+      ├─ helper.py             可选，用 from . import helper 引入
+      └─ data\                 宿主自动创建，给你放私有状态（不进分发包）</code></pre>
+<h3 id="2-1-id-命名规则">2.1 <code>id</code> 命名规则</h3>
+<pre><code>^[a-z][a-z0-9_]{1,31}$</code></pre>
+<ul><li>必须以<strong>小写字母</strong>开头（不能是数字、不能是大写）；</li><li>只允许小写字母、数字、下划线；</li><li>长度 <strong>2 ~ 32</strong> 个字符；</li><li><strong>目录名必须与 <code>plugin.json</code> 的 <code>id</code> 完全一致</strong>（打 zip 时强校验； 直接放目录时不一致只告警，以 <code>manifest.id</code> 为准）。</li></ul>
+<p>内置插件就是范例：<code>afterburner</code> / <code>ace</code> / <code>gamepp</code> / <code>popup</code>。 不要用 <code>my-plugin</code>（连字符非法）、<code>MyPlugin</code>（大写非法）、<code>2fast</code>（数字开头非法）。</p>
+<h3 id="2-2-零插件也能跑">2.2 零插件也能跑</h3>
+<p><code>plugins\</code> 不存在、为空、全是坏插件时，守护照常运行（只是没有任何功能动作）。 你的插件不是必需的，<strong>不要</strong>假设自己一定被加载。</p>
+<hr>
+<h2 id="3-plugin-json-字段全集">3. <code>plugin.json</code> 字段全集</h2>
+<p>只有下列字段会被读取。<strong>写其它字段不会报错，但也不会生效</strong> —— 别指望 <code>dependencies</code> 这类&quot;看起来该有&quot;的键。<code>publisher</code> / <code>homepage</code> / <code>permissions</code> 是 v2.11.3 新增的展示字段（见 §0 与下表），宿主只展示、不据此授权。</p>
+<pre><code class="lang-json">{
+  &quot;id&quot;: &quot;demo_hello&quot;,
+  &quot;name&quot;: &quot;示例插件&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;api&quot;: 1,
+  &quot;entry&quot;: &quot;plugin.py:Plugin&quot;,
+  &quot;icon&quot;: &quot;pulse&quot;,
+  &quot;order&quot;: 50,
+  &quot;home&quot;: true,
+  &quot;builtin&quot;: false,
+  &quot;requires_admin&quot;: false,
+  &quot;publisher&quot;: &quot;你的名字或工作室&quot;,
+  &quot;homepage&quot;: &quot;https://example.com/your-plugin&quot;,
+  &quot;permissions&quot;: [&quot;ui.panel&quot;],
+  &quot;toggle&quot;: [&quot;demo_hello_enabled&quot;],
+  &quot;tip&quot;: &quot;鼠标悬停在主页这一行时显示的说明。\n支持换行。&quot;,
+  &quot;config&quot;: {
+    &quot;keys&quot;: [&quot;demo_hello_enabled&quot;, &quot;demo_hello&quot;],
+    &quot;defaults&quot;: {}
+  },
+  &quot;settings&quot;: [
+    { &quot;key&quot;: &quot;demo_hello_enabled&quot;, &quot;type&quot;: &quot;bool&quot;,
+      &quot;label&quot;: &quot;启用示例功能&quot;, &quot;hint&quot;: &quot;拨动立即生效&quot; },
+    { &quot;key&quot;: &quot;demo_hello.count&quot;, &quot;type&quot;: &quot;int&quot;,
+      &quot;label&quot;: &quot;等待时间&quot;, &quot;min&quot;: 0, &quot;max&quot;: 60, &quot;step&quot;: 5, &quot;unit&quot;: &quot;秒&quot; },
+    { &quot;key&quot;: &quot;demo_hello.mode&quot;, &quot;type&quot;: &quot;choice&quot;,
+      &quot;label&quot;: &quot;显示位置&quot;,
+      &quot;options&quot;: [ { &quot;value&quot;: &quot;tr&quot;, &quot;label&quot;: &quot;右上&quot; },
+                   { &quot;value&quot;: &quot;bl&quot;, &quot;label&quot;: &quot;左下&quot; } ] },
+    { &quot;key&quot;: &quot;demo_hello.path&quot;, &quot;type&quot;: &quot;path&quot;,
+      &quot;label&quot;: &quot;程序路径&quot;, &quot;hint&quot;: &quot;留空则自动查找&quot; }
+  ],
+  &quot;requires&quot;: [],
+  &quot;description&quot;: &quot;给人看的简介，宿主不读，仅随包分发。&quot;
+}</code></pre>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>必填</th><th>默认</th><th>校验与语义</th></tr></thead><tbody><tr><td><code>id</code></td><td>string</td><td><strong>是</strong></td><td>—</td><td>必须匹配 §2.1 正则；<code>plugins\&lt;id&gt;\</code> 的目录名要与它一致</td></tr><tr><td><code>name</code></td><td>string</td><td><strong>是</strong></td><td>—</td><td>非空白字符串。主页与菜单显示的名字</td></tr><tr><td><code>version</code></td><td>string</td><td><strong>是</strong></td><td>—</td><td>非空白字符串。建议 <code>X.Y.Z</code>，插件包文件名要用它</td></tr><tr><td><code>api</code></td><td>int</td><td><strong>是</strong></td><td>—</td><td>正整数，且 <code>≤ 1</code>（当前内核 <code>API_VERSION = 1</code>）。<code>true</code>/<code>&quot;1&quot;</code> 都非法</td></tr><tr><td><code>entry</code></td><td>string</td><td>否</td><td><code>plugin.py:Plugin</code></td><td><code>文件:类名</code>。文件是相对路径，不能是绝对路径、不能含 <code>..</code>；类名必须是合法 Python 标识符。省略 <code>:类名</code> 时按 <code>Plugin</code></td></tr><tr><td><code>icon</code></td><td>string</td><td>否</td><td><code>dot</code></td><td>必须是 §6 白名单里的 20 个之一，否则回落 <code>dot</code> 并记一行日志</td></tr><tr><td><code>order</code></td><td>int</td><td>否</td><td><code>100</code></td><td>主页/菜单排序键，小的在前。相同则按 <code>id</code> 字典序</td></tr><tr><td><code>home</code></td><td>bool</td><td>否</td><td><code>true</code></td><td>是否出现在主页功能行。<strong><code>toggle</code> 为空数组时强制按 <code>false</code> 处理</strong></td></tr><tr><td><code>builtin</code></td><td>bool</td><td>否</td><td><code>false</code></td><td>标记&quot;随安装包分发&quot;。宿主只把它透传给面板，不影响加载</td></tr><tr><td><code>requires_admin</code></td><td>bool</td><td>否</td><td><code>false</code></td><td>语义提示：这个插件需要管理员权限才有效，面板在未提权时据此提示用户</td></tr><tr><td><code>publisher</code></td><td>string</td><td>否</td><td><code>&quot;&quot;</code></td><td>发布者<strong>自称</strong>的名字（≤64 字）。安装框与插件浮层原样展示；缺省显示「未声明（来源不明）」。它与内置 id 同时命中官方标识时界面才按「随安装包分发」措辞</td></tr><tr><td><code>homepage</code></td><td>string</td><td>否</td><td><code>&quot;&quot;</code></td><td>只接受 <code>http(s)://</code> 链接（≤200 字）。写别的格式整包被拒——安装框要给用户一个可核对的来源</td></tr><tr><td><code>permissions</code></td><td>string[]</td><td>否</td><td><code>[]</code></td><td>声明式权限键（词表见 §3.0）。<strong>内核不据此限制任何行为</strong>，只让用户看清插件声称要碰什么；未登记的键原样展示（不拒绝），最多 16 条</td></tr><tr><td><code>toggle</code></td><td>string[]</td><td>否</td><td><code>[&quot;&lt;id&gt;_enabled&quot;]</code></td><td>开关对应的配置路径（点号路径）。见 §7.1</td></tr><tr><td><code>tip</code></td><td>string</td><td>否</td><td><code>&quot;&quot;</code></td><td>主页悬停提示。<code>\n</code> 换行</td></tr><tr><td><code>config.keys</code></td><td>string[]</td><td>否</td><td><code>[]</code></td><td>插件声明&quot;我会读/写这些配置路径&quot;。<strong>只有这里的路径允许 <code>set_cfg</code> 写入</strong></td></tr><tr><td><code>config.defaults</code></td><td>object</td><td>否</td><td><code>{}</code></td><td>仅当插件类没有 <code>DEFAULT_CONFIG</code> 时用作兜底默认值（见 §7.3）</td></tr><tr><td><code>settings</code></td><td>object[]</td><td>否</td><td><code>[]</code></td><td>设置面板可调项声明。每个功能行都有设置入口（见 §3.3），本字段决定入口里的可调项；空/缺省时浮层里只剩卸载。语义与校验见 §3.3</td></tr><tr><td><code>requires</code></td><td>string[]</td><td>否</td><td><code>[]</code></td><td>依赖的其它插件 id。被依赖者没加载成功 → 本插件 <code>status=load_failed</code></td></tr><tr><td><code>description</code></td><td>string</td><td>否</td><td>—</td><td>宿主<strong>不读</strong>。给分发目录/README 用</td></tr></tbody></table></div>
+<h3 id="3-0-权限词表-声明式-v2-11-3">3.0 权限词表（声明式，v2.11.3）</h3>
+<p><code>permissions</code> 不是开关，是给用户看的<strong>声明</strong>。写法用词表里的键：</p>
+<div class="table-wrap"><table><thead><tr><th>键</th><th>安装框里的说法</th></tr></thead><tbody><tr><td><code>process.watch</code></td><td>监视进程启动与退出</td></tr><tr><td><code>process.kill</code></td><td>结束进程</td></tr><tr><td><code>process.priority</code></td><td>调整进程优先级</td></tr><tr><td><code>window.close</code></td><td>关闭窗口/弹窗</td></tr><tr><td><code>files.plugin</code></td><td>读写自己的插件目录</td></tr><tr><td><code>files.any</code></td><td>读写任意文件</td></tr><tr><td><code>registry.write</code></td><td>修改注册表</td></tr><tr><td><code>network</code></td><td>联网收发数据</td></tr><tr><td><code>shell.run</code></td><td>启动程序或调用系统命令</td></tr><tr><td><code>config.write</code></td><td>修改 WBOX 配置</td></tr><tr><td><code>ui.panel</code></td><td>向面板添加界面元素</td></tr></tbody></table></div>
+<p>词表外的键不会导致拒绝安装，界面上标「未登记」原样展示——第三方插件难免有 自己的说法，写个新词就装不进去是不合理的。但<strong>声明少写不影响能力</strong>：插件 照样能做词表外的一切，见 §0。</p>
+<h3 id="3-1-布尔与整数是严格的">3.1 布尔与整数是严格的</h3>
+<p><code>&quot;home&quot;: &quot;true&quot;</code>（字符串）<strong>不会</strong>被当成 <code>true</code>，而是回落到默认值 <code>true</code>—— 碰巧一样所以看不出来；<code>&quot;home&quot;: &quot;false&quot;</code> 则会被当成默认的 <code>true</code>，你的插件会 出现在主页上。<code>order</code> 同理：<code>&quot;order&quot;: &quot;10&quot;</code> 会被当成 <code>100</code>。</p>
+<p><code>api</code> 的校验更严：<code>isinstance(True, int)</code> 为真，所以宿主显式排除了 <code>bool</code>， <code>&quot;api&quot;: true</code> 直接判 <code>bad_manifest</code>。</p>
+<h3 id="3-2-manifest-非法时代码不会被执行">3.2 manifest 非法时代码不会被执行</h3>
+<p>校验顺序是<strong>先 manifest、后 import</strong>：<code>id</code> / <code>name</code> / <code>version</code> / <code>api</code> / <code>entry</code> 任何一项不合法，你的 <code>plugin.py</code> 根本不会被 import。所以&quot;半成品代码&quot;放在 非法 manifest 的目录里是安全的，不会被误执行。</p>
+<h3 id="3-3-settings-设置面板可调项-面板行设置入口">3.3 <code>settings</code> —— 设置面板可调项（面板行设置入口）</h3>
+<p><code>settings</code> 是一个对象数组，每项声明一个面板可调的配置键。宿主解析后交给面板。</p>
+<p><strong>v2.7.0 起每个功能行都有设置入口</strong>（卸载沉进了设置浮层，没有可调项的插件 也需要入口）：v2.10.0 起内置默认是极简皮肤，点整行（名称、图标或行尾箭头） 在本行底下行内展开可调项，再点一次收起；声明 <code>performance=standard</code> 的第三方 皮肤行尾一枚齿轮，点开是本插件的设置浮层。<code>settings</code> 缺省、为空数组、或 所有项都被丢弃时，入口仍在，只是浮层里只剩插件名、版本与「卸载此插件」 （极简档显示「这个插件没有可调项」）。</p>
+<p>写法上只有下面两条硬规则，其余都是&quot;写了不生效&quot;：</p>
+<ol><li><strong>每项必须有 <code>key</code> / <code>type</code> / <code>label</code> 三个字段</strong>，缺一或为空则该项被丢弃。</li><li><strong>非法项一律静默丢弃，不判 <code>bad_manifest</code></strong>：这是展示层字段，写坏一项不该</li></ol>
+<p>让一个本来能跑的插件彻底不工作。丢弃也不打日志（面板会频繁重读注册表）。 所以改完 manifest 后<strong>必须在面板里亲眼看到这一项</strong>，没看到就是被丢弃了。</p>
+<h4 id="key-点路径-落盘到-config-json"><code>key</code> —— 点路径，落盘到 <code>config.json</code></h4>
+<ul><li>语法：<code>^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$</code>，即点号分隔的 标识符序列，如 <code>gamepp.path</code>、<code>desktop_hud.show_cpu</code>。首段不允许数字开头。</li><li>面板保存时按点路径写 <code>config.json</code>（<code>demo_hello.count</code> 落盘为嵌套的 <code>{&quot;demo_hello&quot;: {&quot;count&quot;: ...}}</code>），用户值优先于默认值，与 §7 的合并口径一致。</li><li>请只用<strong>自己插件声明过的</strong>键（§7.1 的 <code>toggle</code> / <code>config.keys</code>）。宿主解析 <code>settings</code> 时<strong>不</strong>做内核保留键过滤（§7.4 的 <code>poll_*</code> / <code>exclude_*</code> / <code>_</code> 前缀约束在这里不生效），往内核键上挂设置项会把面板显示和守护行为掰成两套—— 这是写法合法但后果自负的典型。</li></ul>
+<h4 id="type-四种控件"><code>type</code> —— 四种控件</h4>
+<div class="table-wrap"><table><thead><tr><th>type</th><th>面板控件</th><th>配置里的值</th><th>专属字段</th></tr></thead><tbody><tr><td><code>bool</code></td><td>胶囊开关</td><td><code>true</code> / <code>false</code></td><td>无</td></tr><tr><td><code>int</code></td><td>−/＋ 整数步进器</td><td>整数</td><td><code>min</code> / <code>max</code> / <code>step</code> / <code>unit</code></td></tr><tr><td><code>choice</code></td><td>一排文字选项按钮</td><td>选项的 <code>value</code> 字符串</td><td><code>options</code></td></tr><tr><td><code>path</code></td><td>「自动查找 / 选择」文件选择</td><td>路径字符串（面板统一为反斜杠）</td><td>无</td></tr></tbody></table></div>
+<p><code>type</code> 不是这四个之一（或写成别的类型）→ 该项丢弃。</p>
+<h4 id="各类型的字段细则-与宿主-parsesettings-逐条对应">各类型的字段细则（与宿主 <code>_parse_settings</code> 逐条对应）</h4>
+<ul><li><strong><code>label</code></strong>：必填，非空白字符串，去首尾空白后显示在设置行左侧。</li><li><strong><code>hint</code></strong>：可选字符串，去空白后作为标题下的小字说明；空串不显示。</li><li><strong><code>int</code></strong>： - <code>min</code> 默认 <code>0</code>，<code>max</code> 默认 <code>100</code>；两者都必须是整数（<code>&quot;50&quot;</code> / <code>true</code> 都 非法，回落默认值）。<code>max &lt; min</code> 时<strong>自动对调</strong>，不报错。 - <code>step</code> 默认 <code>1</code>，且强制 <code>&gt;= 1</code>（写 <code>0</code> 或负数按 <code>1</code> 处理）。 - <code>unit</code> 可选字符串（如 <code>&quot;秒&quot;</code>），显示在数值旁边。 - 面板是<strong>整数步进器</strong>：不支持小数。需要小数参数的插件自己在代码里算， 不要往设置面板塞。</li><li><strong><code>choice</code></strong>： - <code>options</code> 是选项列表，每项两种写法等价：<code>{&quot;value&quot;: &quot;tr&quot;, &quot;label&quot;: &quot;右上&quot;}</code> 或 <code>[&quot;tr&quot;, &quot;右上&quot;]</code>。<code>value</code> 与 <code>label</code> 都必须是非空白字符串。 - <strong>清洗后一个选项都不剩 → 整项丢弃</strong>（没有选项的控件渲染出来是空壳）。 - 落盘的是 <code>value</code>（不是 <code>label</code>）；当前配置的值不在选项里时，面板按第一项显示。</li><li><strong><code>path</code></strong>：无专属字段。值为空时面板显示「自动查找」，点「选择」弹文件对话框； 面板保存时把 <code>/</code> 统一替换成 <code>\</code>。</li><li><strong><code>bool</code></strong>：无专属字段。当前配置缺这个键时面板按 <code>false</code> 显示。</li></ul>
+<h4 id="浮层里显示的值从哪来">浮层里显示的值从哪来</h4>
+<p>面板按 §7 的三段合并（内核默认 → 插件 <code>DEFAULT_CONFIG</code> → 用户 <code>config.json</code>） 后的配置显示当前值。所以：<strong>每个 <code>settings.key</code> 都该出现在你的 <code>DEFAULT_CONFIG</code> 里</strong>，否则面板显示的不是守护实际在跑的值。</p>
+<h4 id="与-config-keys-的关系">与 <code>config.keys</code> 的关系</h4>
+<p><code>settings</code> 声明的是&quot;面板替用户写哪些键&quot;，<code>config.keys</code> / <code>toggle</code> 声明的是 &quot;插件自己有权读写哪些键&quot;。两者写同样的键最不容易出错；注意 <code>set_cfg</code> 的权限 只认后者（§7.4），面板写的键插件自然能从 <code>ctx.cfg()</code> 读到。</p>
+<hr>
+<h2 id="4-python-api">4. Python API</h2>
+<p>模块：<code>plugin_api</code>（已在 <code>sys.path</code> 里，直接 <code>from plugin_api import ...</code>）。</p>
+<h3 id="4-1-三个数据类">4.1 三个数据类</h3>
+<h4 id="sessionview-会话只读视图"><code>SessionView</code> —— 会话只读视图</h4>
+<p>由内核构造，插件<strong>只能读</strong>（<code>__setattr__</code> 已封死，写入抛 <code>AttributeError</code>）。</p>
+<div class="table-wrap"><table><thead><tr><th>属性</th><th>类型</th><th>语义</th></tr></thead><tbody><tr><td><code>.state</code></td><td><code>str</code></td><td><code>'idle'</code> / <code>'active'</code> / <code>'grace'</code> 三态之一</td></tr><tr><td><code>.active</code></td><td><code>bool</code></td><td>等价于 <code>state == 'active'</code></td></tr><tr><td><code>.games</code></td><td><code>list[str]</code></td><td>本轮判定为&quot;在跑的游戏&quot;的进程名（小写）</td></tr><tr><td><code>.started_at</code></td><td><code>float</code></td><td>本会话 <code>idle -&gt; active</code> 的墙钟时刻（0.0 表示无）</td></tr><tr><td><code>.grace_until</code></td><td><code>float</code></td><td>宽限期的截止墙钟；非 grace 状态为 0.0</td></tr><tr><td><code>.resumed</code></td><td><code>bool</code></td><td>本会话是否经历过&quot;宽限期内游戏回来&quot;（<code>on_session_resume</code>）</td></tr></tbody></table></div>
+<p>常量：<code>STATE_IDLE</code> / <code>STATE_ACTIVE</code> / <code>STATE_GRACE</code>。</p>
+<h4 id="tick-每轮的数据包"><code>Tick</code> —— 每轮的数据包</h4>
+<p>内核每轮构造一次，构造后不再修改（插件也<strong>不要</strong>改）。</p>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>语义</th></tr></thead><tbody><tr><td><code>.seq</code></td><td><code>int</code></td><td>单调递增的轮次序号，从 1 开始。判断&quot;这一轮和第几轮&quot;用它</td></tr><tr><td><code>.now</code></td><td><code>float</code></td><td>本轮的统一墙钟。<strong>同一轮内所有钩子拿到的 <code>now</code> 相同</strong>，离线测试靠它断言</td></tr><tr><td><code>.procs</code></td><td><code>dict[int, str]</code> <strong>或 <code>None</code></strong></td><td><code>{pid: 小写进程名}</code>。<code>None</code> 表示&quot;本轮快照失败&quot;，与 <code>{}</code>（成功但一个进程都没有）语义完全不同</td></tr><tr><td><code>.names</code></td><td><code>set[str]</code></td><td><code>set(procs.values())</code> 的便捷视图（快照失败时是空集，别用它判断&quot;没有进程&quot;）</td></tr><tr><td><code>.games</code></td><td><code>list[str]</code></td><td>同 <code>session.games</code></td></tr><tr><td><code>.session</code></td><td><code>SessionView</code></td><td>会话视图快照</td></tr><tr><td><code>.events</code></td><td><code>frozenset</code></td><td>预留事件集合，当前恒为空</td></tr></tbody></table></div>
+<h4 id="plugincontext-每个插件实例一个"><code>PluginContext</code> —— 每个插件实例一个</h4>
+<p>构造函数参数（一般不用自己构造，宿主会给你）：<code>id</code> / <code>base</code> / <code>plugin_dir</code> / <code>data_dir</code> / <code>api</code> / <code>manifest</code> / <code>toggle</code>。</p>
+<p><strong>属性</strong>（只读约定）：</p>
+<div class="table-wrap"><table><thead><tr><th>属性</th><th>语义</th></tr></thead><tbody><tr><td><code>ctx.id</code></td><td>插件 id（= <code>manifest.id</code>）</td></tr><tr><td><code>ctx.base</code></td><td>安装根目录（<code>config.json</code>、<code>guard.log</code> 所在处）</td></tr><tr><td><code>ctx.plugin_dir</code></td><td><code>plugins\&lt;id&gt;</code> 的绝对路径</td></tr><tr><td><code>ctx.data_dir</code></td><td><code>plugins\&lt;id&gt;\data</code>，宿主已 <code>makedirs</code></td></tr><tr><td><code>ctx.api</code></td><td>内核提供的 API 版本（当前 1）</td></tr><tr><td><code>ctx.manifest</code></td><td>manifest 的 dict 副本</td></tr><tr><td><code>ctx.toggle</code></td><td>规范化后的开关路径列表（至少 <code>['&lt;id&gt;_enabled']</code>，除非你显式写 <code>[]</code>）</td></tr><tr><td><code>ctx.status_text</code></td><td><code>set_status()</code> 写入的摘要</td></tr></tbody></table></div>
+<p><strong>方法</strong>：</p>
+<div class="table-wrap"><table><thead><tr><th>签名</th><th>语义</th><th>可空</th><th>备注</th></tr></thead><tbody><tr><td><code>ctx.cfg(path, default=None)</code></td><td>按点号路径读配置，缺键回落 <code>DEFAULT_CONFIG</code>，再缺返回 <code>default</code></td><td>—</td><td><code>ctx.cfg('demo_hello.speed', 3)</code></td></tr><tr><td><code>ctx.set_cfg(path, value)</code></td><td>写配置（内存），内核负责落盘</td><td>越权抛 <code>PermissionError</code></td><td>只允许 <code>toggle</code> + <code>config.keys</code> 声明的路径</td></tr><tr><td><code>ctx.log(msg)</code></td><td>写 <code>guard.log</code>，自动加 <code>[&lt;id&gt;] </code> 前缀</td><td>—</td><td>唯一正确的日志方式，见 §9.1</td></tr><tr><td><code>ctx.procs()</code></td><td>本轮进程表</td><td><strong>可能为 <code>None</code></strong></td><td>等价于 <code>tick.procs</code>，但在非 tick 钩子里也能用</td></tr><tr><td><code>ctx.snapshot()</code></td><td><strong>现取</strong>一份进程表（关闭流程里复核用）</td><td><strong>可能为 <code>None</code></strong></td><td>比 <code>procs()</code> 新，但有系统调用开销</td></tr><tr><td><code>ctx.process_path(pid)</code></td><td>进程 exe 全路径（走内核路径缓存）</td><td><strong>可能为 <code>None</code></strong></td><td>取不到通常是权限或进程已退出</td></tr><tr><td><code>ctx.refresh_paths(procs)</code></td><td>让内核按这张表刷新路径缓存</td><td>—</td><td>一般不用手动调</td></tr><tr><td><code>ctx.games_present(procs=None)</code></td><td>内核判定&quot;游戏是否还在跑&quot;</td><td>取不到表时返回 <strong><code>True</code></strong></td><td>拿不到信息时<strong>宁可不动作</strong></td></tr><tr><td><code>ctx.watch_names()</code></td><td>当前监控的进程名集合（小写）</td><td>可能为空集</td><td>配置 + 自动发现</td></tr><tr><td><code>ctx.session()</code></td><td><code>SessionView</code></td><td>不会为 <code>None</code></td><td>provider 缺失时返回 idle 视图</td></tr><tr><td><code>ctx.now()</code></td><td>本轮墙钟</td><td>—</td><td>provider 缺失时退化为 <code>time.time()</code></td></tr><tr><td><code>ctx.import_core(name)</code></td><td>取内核低层库</td><td>未知名字抛 <code>KeyError</code></td><td>见 §4.2</td></tr><tr><td><code>ctx.request_fast_poll(until)</code></td><td>登记&quot;到 <code>until</code> 之前我要 0.4 秒快节拍&quot;</td><td>—</td><td>内核取所有插件的最大值</td></tr><tr><td><code>ctx.retry_close(delay=2.0)</code></td><td><strong>仅 <code>on_session_close</code> 内有效</strong>：把会话从&quot;即将 idle&quot;拉回 grace</td><td>返回 <code>bool</code></td><td>其它钩子里调用返回 <code>False</code></td></tr><tr><td><code>ctx.write_state(name, obj)</code></td><td>原子写 <code>data\&lt;name&gt;.json</code>（<code>tmp</code> + <code>os.replace</code>）</td><td>抛 <code>OSError</code></td><td><code>name</code> 不能含路径分隔符，自动补 <code>.json</code></td></tr><tr><td><code>ctx.read_state(name, default=None)</code></td><td>读 <code>data\&lt;name&gt;.json</code></td><td>文件缺失/损坏返回 <code>default</code></td><td></td></tr><tr><td><code>ctx.set_status(text, level='ok')</code></td><td>面板菜单里该插件行右侧的一行摘要</td><td>—</td><td><code>level</code> 当前只记录不参与渲染</td></tr></tbody></table></div>
+<h3 id="4-2-ctx-importcore-唯一允许的内核访问方式">4.2 <code>ctx.import_core()</code> —— 唯一允许的内核访问方式</h3>
+<pre><code class="lang-python">core = self.ctx.import_core('guard_core')
+core.run_hidden([core.TASKKILL, '/PID', str(pid), '/F'])</code></pre>
+<p>白名单只有六个（<code>plugin_host.CORE_MODULES</code>）：</p>
+<div class="table-wrap"><table><thead><tr><th>名字</th><th>里面有什么</th><th>典型用途</th></tr></thead><tbody><tr><td><code>guard_core</code></td><td><code>snapshot()</code> / <code>process_path(pid)</code> / <code>run_hidden(args)</code> / <code>run_capture(args)</code> / <code>shell_execute_runas(path)</code> / <code>enable_debug_privilege()</code> / 常量 <code>TASKKILL</code> <code>TASKLIST</code> <code>POWERSHELL</code> <code>CREATE_NO_WINDOW</code> <code>RTSS_NAMES</code></td><td>启动/结束进程、提权、取路径</td></tr><tr><td><code>ace_native</code></td><td>ACE 清理的原生实现（四道闸门在内）</td><td>ACE 相关动作</td></tr><tr><td><code>popup_guard</code></td><td>弹窗拦截的原生实现（窗口枚举 / WM_CLOSE / 进程树）</td><td>弹窗相关动作</td></tr><tr><td><code>game_lib</code></td><td>Steam / Epic / WeGame / GOG / Ubisoft 库扫描</td><td>找游戏目录</td></tr><tr><td><code>core_defaults</code></td><td>内核默认值常量（<code>DEFAULTS</code> / <code>ACE_CLEANUP_DEFAULTS</code> / …）</td><td>读安全默认值</td></tr><tr><td><code>plugin_api</code></td><td>本模块自身</td><td>取 <code>SessionView</code>、常量</td></tr></tbody></table></div>
+<p>取进程表<strong>不要</strong>调内核的 <code>Guard.read_procs</code>（它是守护实例的方法，插件拿不到）， 用 <code>ctx.procs()</code> / <code>ctx.snapshot()</code>。</p>
+<p><strong>为什么必须这样，而不是 <code>import guard_core</code>：</strong></p>
+<ol><li>内核库是被冻结进 exe 的，插件目录里没有它们；在插件里直接 <code>import</code> 会在</li></ol>
+<p>冻结环境下拿到另一个实例或直接 <code>ModuleNotFoundError</code>（PyInstaller 的静态 分析看不到插件目录里的导入）。</p>
+<ol><li>面板进程也会 <code>import</code> 你的插件。用 <code>ctx.import_core()</code> 懒加载，面板走</li></ol>
+<p><code>gui_*</code> 时就不会把 Win32 那一套拉进面板进程（守护模式的常驻内存也是这么 保住的：守护进程的模块表里完全不含 tkinter，由 <code>test/test_guard_no_tkinter.py</code> 在干净子进程里钉死）。</p>
+<ol><li>白名单是<strong>契约</strong>：想加一个内核模块进白名单属于改内核，需要评审。不要在</li></ol>
+<p>插件里复制一份内核逻辑——复制出来的那份会绕过四道闸门。</p>
+<h3 id="4-3-wboxplugin-基类-旧名-wingmanplugin-保留为别名">4.3 <code>WBOXPlugin</code> 基类（旧名 <code>WingmanPlugin</code> 保留为别名）</h3>
+<pre><code class="lang-python">from plugin_api import WBOXPlugin
+
+class Plugin(WBOXPlugin):
+    DEFAULT_CONFIG = {'demo_hello': {'enabled': True}}
+    API = 1
+
+    def __init__(self, ctx):
+        WBOXPlugin.__init__(self, ctx)   # 必须，否则 self.ctx 不存在</code></pre>
+<p>不继承也能被加载（鸭子类型，宿主会记一行提示），但 <code>gui_state()</code> / <code>gui_toggle()</code> 的默认实现就没了，面板开关会失灵。<strong>请继承</strong>。</p>
+<hr>
+<h2 id="5-钩子与调度">5. 钩子与调度</h2>
+<h3 id="5-1-完整调用顺序">5.1 完整调用顺序</h3>
+<pre><code>守护冷启动
+  ├─ discover()                      扫描目录 + 校验 manifest（不 import）
+  ├─ _load_one()                     import 入口文件 → 实例化 cls(ctx)
+  │    └─ 失败 → status=load_failed，后续钩子全部不发
+  ├─ migrate(raw_cfg)                每次加载一次；可原地改 raw_cfg（搬段/改名）
+  ├─ on_load()                       加载完成，做一次性目录检查
+  ├─ on_config(自己的cfg)            每插件一份，只含自己声明的路径
+  ├─ on_start()                      主循环开始前（guard.pid 已写、stop.flag 已清）
+  └─ 循环 tick():
+       ├─ reload_config()            config.json 的 mtime 变了 → 再发一次 on_config
+       ├─ read_procs()
+       │    └─ 返回 None → 本轮**什么都不发**（前 2 次），第 3 次起沿用上一轮结果
+       ├─ 会话迁移钩子（本轮最多 1 个）
+       │    ├─ on_session_start   idle -&gt; active
+       │    ├─ on_session_resume  grace -&gt; active（宽限期内游戏闪断后回来）
+       │    ├─ on_session_grace   active -&gt; grace（游戏全退，进入 exit_grace_sec）
+       │    └─ on_session_close   grace -&gt; idle（宽限到期且游戏确实没回来）
+       └─ on_tick(tick)              **必然最后调用**，每轮最多一次
+退出
+  └─ on_exit(reason)                 reason ∈ {'guard_stop', 'reload', 'fatal'}</code></pre>
+<p>要点：</p>
+<ul><li><strong><code>on_tick</code> 一定在会话钩子之后</strong>。同一轮里可能出现 <code>on_session_close</code> + <code>on_tick</code>，不会出现两个会话钩子。</li><li><code>on_config</code> 在<strong>每次</strong> <code>config.json</code> mtime 变化后重发（热加载），不只是启动时。</li><li>热重载插件（面板装/卸）会走 <code>on_exit('reload')</code> → 重建宿主 → <code>on_load</code> → <code>on_config</code>；<strong>不重发 <code>on_start</code></strong>（它只负责冷启动那一轮的残留清理）。</li><li><code>on_exit</code> 禁止阻塞超过 2 秒：卸载程序在等它。</li></ul>
+<h3 id="5-2-procs-is-none-时不分发">5.2 <code>procs is None</code> 时不分发</h3>
+<p><code>read_procs()</code> 失败（连续 1~2 次）时，内核直接 <code>return</code>，本轮<strong>不发任何钩子</strong>。 你的插件不会收到&quot;这一轮没有游戏&quot;的假信号，也不会因为空表误关东西。</p>
+<p>连续 3 次失败后内核降级：沿用上一轮的成功结果继续跑，并在日志里写一行。</p>
+<p>所以：<strong>任何&quot;关东西&quot;的动作都要先看 <code>procs</code> / <code>snapshot()</code> 是不是 <code>None</code></strong>， 是 <code>None</code> 就调 <code>ctx.retry_close()</code> 推迟，而不是当空表处理。</p>
+<pre><code class="lang-python">def on_session_close(self, tick):
+    procs = self.ctx.procs()
+    if procs is None:
+        self.ctx.retry_close(2)      # 2 秒后再发一次 on_session_close
+        return
+    ...</code></pre>
+<h3 id="5-3-异常隔离">5.3 异常隔离</h3>
+<p>每个钩子调用都包在 <code>try/except BaseException</code> 里（含 <code>SystemExit</code>、<code>KeyboardInterrupt</code>）：</p>
+<ul><li>异常被记到该插件的 <code>error_count</code> / <code>last_error</code> / <code>last_error_at</code>；</li><li>状态从 <code>ok</code> 降为 <code>degraded</code>（<strong>仍然继续收钩子</strong>）；</li><li>同类异常 60 秒内只写一条日志，避免刷爆 <code>guard.log</code>；</li><li>钩子耗时超过 <strong>5 秒</strong>记一条警告（Python 无法安全中断同步调用，只告警不终止）；</li><li>下一次同钩子成功即恢复 <code>ok</code>，日志里会写&quot;已恢复正常&quot;。</li></ul>
+<p>结论：<strong>抛异常不会拖垮守护</strong>，但会降级并让面板显示异常——不要用异常做流程控制。</p>
+<h3 id="5-4-连败-10-次自动降频">5.4 连败 10 次自动降频</h3>
+<p><code>on_tick</code> 连续失败 <strong>10 次</strong>后，宿主把 <code>on_tick</code> 降频为<strong>每 30 轮调用一次</strong>； 成功任意一次立即恢复每轮调用。</p>
+<p>后果（务必知道）：降频期间你的插件会&quot;看起来反应很慢&quot;。如果是因为某次 <code>tick</code> 里访问了不稳定的东西（权限、已退出进程、坏路径），先修根因，不要靠 降频兜。</p>
+<h3 id="5-5-onconfig-拿到的是-你自己那份">5.5 <code>on_config</code> 拿到的是&quot;你自己那份&quot;</h3>
+<p>宿主会先按 <code>manifest.toggle</code> + <code>manifest.config.keys</code> 把你的配置切出来：</p>
+<pre><code class="lang-python">def on_config(self, cfg):
+    # cfg 只有 demo_hello_enabled 与 demo_hello 两个路径（外加 DEFAULT_CONFIG 打底）
+    seg = cfg.get('demo_hello') or {}
+    self.enabled = bool(cfg.get('demo_hello_enabled', True))
+    self.speed = float(seg.get('speed', 3))</code></pre>
+<p><strong>不要</strong>指望在这里看到 <code>game_processes</code> 之类内核键——即使写了也读不到。 要读内核键用 <code>ctx.cfg('game_processes')</code>（读是允许的，写不允许）。</p>
+<hr>
+<h2 id="6-图标">6. 图标</h2>
+<p><code>icon</code> 只接受下列 20 个 kind（<code>plugin_api.ICON_WHITELIST</code>，由 <code>settings_gui.Glyph</code> 绘制；面板自用的箭头、窗口控制等图标不在插件白名单里）：</p>
+<pre><code>link  plane  pulse  shield  block  dot  play  stop  boot  rescan
+log   cfg    sun    moon    check  close  plus  trash  folder  admin</code></pre>
+<ul><li>写未知值 → 回落 <code>dot</code>，并写一行日志 <code>icon %r 不在白名单，回落 dot</code>；</li><li>图标是<strong>灰阶线性</strong>风格（<code>shield</code> 是唯一实心品牌盾），没有彩色、没有 emoji；</li><li>想加新图标<strong>不是插件侧能解决的事</strong>：要同时改 <code>design/generate_icons.py</code> 与 <code>settings_gui.Glyph.draw</code> 两处并重新出图，属于内核改动。</li></ul>
+<p>现有 4 个内置插件的选择可作参考：<code>afterburner=plane</code>、<code>gamepp=pulse</code>、 <code>ace=shield</code>、<code>popup=block</code>。</p>
+<hr>
+<h2 id="7-配置">7. 配置</h2>
+<h3 id="7-1-两种放法-任选其一">7.1 两种放法，任选其一</h3>
+<p><strong>布尔开关（推荐，最少代码）</strong></p>
+<p>manifest 不写 <code>toggle</code>，宿主自动补成 <code>['&lt;id&gt;_enabled']</code>：</p>
+<pre><code class="lang-json">{ &quot;id&quot;: &quot;demo_hello&quot;, &quot;name&quot;: &quot;示例&quot;, &quot;version&quot;: &quot;1.0.0&quot;, &quot;api&quot;: 1 }</code></pre>
+<p>于是 <code>config.json</code> 里是扁平键：</p>
+<pre><code class="lang-json">{ &quot;demo_hello_enabled&quot;: true }</code></pre>
+<p><strong>对象段（要放多个参数时）</strong></p>
+<pre><code class="lang-json">&quot;toggle&quot;: [&quot;demo_hello.enabled&quot;],
+&quot;config&quot;: { &quot;keys&quot;: [&quot;demo_hello&quot;] }</code></pre>
+<pre><code class="lang-json">{ &quot;demo_hello&quot;: { &quot;enabled&quot;: true, &quot;speed&quot;: 3, &quot;path&quot;: &quot;&quot; } }</code></pre>
+<p><code>toggle</code> 写 <code>[]</code>（显式空数组）表示&quot;这个插件没有开关&quot;，宿主会强制 <code>home = false</code>，它就不出现在主页上（只在菜单的插件分组里出现一行）。</p>
+<h3 id="7-2-config-json-是-mtime-热加载">7.2 <code>config.json</code> 是 mtime 热加载</h3>
+<p>守护每轮 <code>reload_config()</code> 检查 <code>config.json</code> 的 mtime；变了就重新合并并给 每个插件发 <code>on_config</code>。<strong>不需要重启守护</strong>，也<strong>不要</strong>自己去读 <code>config.json</code> 文件——那会绕过合并规则（默认值打底、保留键过滤、保护名单并集）。</p>
+<p>写配置一律用 <code>ctx.set_cfg(path, value)</code>，内核会异步落盘。</p>
+<h3 id="7-3-默认值写在自己的代码里">7.3 默认值写在自己的代码里</h3>
+<pre><code class="lang-python">class Plugin(WBOXPlugin):
+    DEFAULT_CONFIG = {
+        'demo_hello': {'enabled': True, 'speed': 3},
+    }</code></pre>
+<p><code>DEFAULT_CONFIG</code> 是<strong>权威来源</strong>，<code>manifest.config.defaults</code> 只在插件类没有 <code>DEFAULT_CONFIG</code> 时兜底。</p>
+<p><strong>不要</strong>改 <code>src/core_defaults.py</code> 来塞插件默认值：那个模块是随 exe 冻结的 安全默认值唯一来源（ACE 四道闸门的秒数、弹窗保护名单都在里面），改它等于改 内核行为，还要重新出包。</p>
+<h3 id="7-4-内核保留键-只能读-不能写">7.4 内核保留键：只能读，不能写</h3>
+<p><code>_RESERVED_KEYS</code> / <code>_RESERVED_PREFIXES</code>：</p>
+<div class="table-wrap"><table><thead><tr><th>类别</th><th>具体</th></tr></thead><tbody><tr><td>保留键</td><td><code>game_processes</code>、<code>game_roots</code>、<code>exit_grace_sec</code>、<code>log_max_kb</code>、<code>ui_theme</code></td></tr><tr><td>保留前缀</td><td><code>poll_</code>、<code>exclude_</code>、<code>_</code>（下划线开头）</td></tr></tbody></table></div>
+<ul><li>写在 <code>manifest.toggle</code> / <code>config.keys</code> 里会被<strong>静默剔除</strong>；</li><li><code>ctx.set_cfg()</code> 写这些路径会抛 <code>PermissionError</code>；</li><li><code>ctx.cfg()</code> 读它们是完全允许的。</li></ul>
+<h3 id="7-5-保护性名单是-只增不减">7.5 保护性名单是&quot;只增不减&quot;</h3>
+<p><code>popup_guard.protect_names</code> 属于 <code>SAFE_UNION_PATHS</code>：用户值与内核默认值做并集 （默认项在前、大小写不敏感去重），用户删不掉默认的保护项（QQ/微信等）。 这是产品语义，不是 bug。其它 list 键仍是&quot;整体替换&quot;语义。</p>
+<hr>
+<h2 id="8-打包与分发">8. 打包与分发</h2>
+<h3 id="8-1-包格式-wbox-plugin-zip-v1">8.1 包格式：<code>wbox-plugin-zip-v1</code></h3>
+<pre><code>demo_hello-v1.0.0.zip
+└─ demo_hello/                ← 唯一顶层目录，名字必须等于 manifest.id
+   ├─ plugin.json
+   ├─ plugin.py
+   └─ ...</code></pre>
+<p>规则（<code>plugin_package.inspect_zip</code> 全量校验，任一不过即拒绝安装）：</p>
+<div class="table-wrap"><table><thead><tr><th>项</th><th>限制</th></tr></thead><tbody><tr><td>顶层目录</td><td><strong>有且只有一个</strong>，且名字必须匹配 id 正则、且等于 <code>plugin.json</code> 的 <code>id</code></td></tr><tr><td>文件数</td><td>≤ <strong>64</strong></td></tr><tr><td>单文件大小</td><td>≤ <strong>1 MB</strong></td></tr><tr><td>解压后总量</td><td>≤ <strong>2 MB</strong></td></tr><tr><td>压缩包大小</td><td>≤ <strong>8 MB</strong></td></tr><tr><td>文件类型</td><td>白名单：<code>.py .json .md .txt .cfg .ini .yaml .yml .csv .xml .png .ico</code></td></tr><tr><td>路径</td><td>拒绝绝对路径、盘符、<code>..</code>、空条目、尾点/尾空格、符号链接、加密条目</td></tr><tr><td>必需文件</td><td><code>&lt;id&gt;/plugin.json</code> + <code>entry</code> 指向的入口文件</td></tr></tbody></table></div>
+<p><strong>不接受</strong>可执行文件与脚本（<code>.exe .dll .pyd .bat .cmd .ps1 .vbs .lnk .reg</code> 等）， 白名单之外的扩展名一律拒。真需要带二进制，请让插件在运行时从官方渠道下载， 并自己校验签名。</p>
+<p>面板「＋」安装与安装器的插件保留逻辑<strong>共用同一份校验</strong>，所以&quot;能被打出来的 就一定装得进去，装得进去的一定能跑&quot;。</p>
+<h3 id="8-2-打包命令">8.2 打包命令</h3>
+<pre><code class="lang-bat">rem 在插件仓库 wbox-plugins 根执行；不带参数 = 打包 plugins\ 下全部插件到 dist\
+C:\Python38\python.exe tools\pack.py
+
+rem 打包指定插件目录（目录名必须等于 manifest.id）
+C:\Python38\python.exe tools\pack.py plugins\demo_hello
+
+rem 只校验一个已有 zip（不安装、不写盘）
+C:\Python38\python.exe tools\pack.py --check dist\demo_hello-v1.0.0.zip</code></pre>
+<p>输出：<code>dist\&lt;id&gt;-v&lt;version&gt;.zip</code> 和同名 <code>.sha256</code> 侧车。产出的包会 <strong>立刻自检一遍</strong>（条目集合 / 体积 / 侧车哈希），打不出来就说明你的目录结构有问题。 第三方作者也可以按同一约定自己打 zip：根下只有一个 <code>&lt;id&gt;\</code> 目录， <code>&lt;id&gt;\plugin.json</code> 是清单，入口文件由 <code>entry</code> 指定。</p>
+<p>分发时<strong>把 <code>.zip</code> 和 <code>.zip.sha256</code> 一起发</strong>：用户装的时候，安装框会核对侧车， 不一致直接拒绝（包被替换或传坏时能发现）。侧车不是签名，只能证明&quot;和发布时 是同一份文件&quot;，不要拿它当作者身份。</p>
+<p>打包时会自动跳过：<code>__pycache__</code>、<code>data</code>、<code>.git</code>、<code>.idea</code> 目录，以及 <code>.pyc .pyo .bak .tmp .log .zip .flag</code> 后缀和 <code>Thumbs.db</code> / <code>desktop.ini</code>。</p>
+<h3 id="8-3-安装-卸载-升级">8.3 安装 / 卸载 / 升级</h3>
+<ul><li><strong>安装</strong>：面板标题栏的「＋」→ 选 zip。校验通过后先弹一屏<strong>来源确认</strong> （发布者 / 来源 / 声明权限 / 文件数与体积 / 包完整性 / SHA-256），确认后才安装。 已存在同 id 时再弹一次覆盖确认；旧目录先移到 <code>%LOCALAPPDATA%\WBOX\replaced-plugins-&lt;时间戳&gt;\</code>（<strong>移动不是删除</strong>）。</li><li><strong>安装被打断也能收尾</strong>：换入前写 <code>.plugin-install.json</code> 事务日志。若在 &quot;旧版已移走、新版还没换入&quot;之间断电/被杀，下次启动（守护或面板）会自动 把备份搬回；首发安装被打断则用完整暂存目录补完；两者都不行才报&quot;需要重装&quot;。 孤儿暂存目录（<code>.plugin-staging-*</code>，超过 6 小时无人认领）一并清掉。</li><li><strong>卸载</strong>：插件行尾齿轮 → 设置浮层底部「卸载此插件」（极简档点行展开， 在展开块底部）。目录移到 <code>%LOCALAPPDATA%\WBOX\removed-plugins-&lt;时间戳&gt;\</code>。内置插件也允许删。</li><li><strong>生效</strong>：面板写 <code>plugins_reload.flag</code>；守护在<strong>会话 idle</strong> 时重建宿主， 最多 2 秒延迟。游戏会话中安装的插件从<strong>下一局</strong>开始接管。</li><li><strong>升级安装包不会覆盖用户插件</strong>：安装器只覆盖 <code>afterburner/ace/gamepp/popup/desktop_hud</code> 五个内置目录，其它目录在升级/卸载前会先备份。</li></ul>
+<hr>
+<h2 id="9-调试">9. 调试</h2>
+<h3 id="9-1-日志-只用-ctx-log">9.1 日志：只用 <code>ctx.log()</code></h3>
+<pre><code class="lang-python">self.ctx.log('检测到 foo.exe 退出，准备关闭')
+# guard.log 里出现：[demo_hello] 检测到 foo.exe 退出，准备关闭</code></pre>
+<ul><li>写入 <code>&lt;安装目录&gt;\guard.log</code>（512 KB 轮转到 <code>guard.log.1</code>）；</li><li>自动加 <code>[&lt;id&gt;] </code> 前缀，方便过滤；</li><li><strong>不要用 <code>print()</code></strong>：守护进程以 <code>console=False</code> 打包，<code>sys.stdout</code> 是 <code>None</code>， <code>print()</code> 会抛 <code>AttributeError</code>，然后被记成一次插件异常（你自己给自己降级）。</li></ul>
+<h3 id="9-2-pluginsstate-json-只读">9.2 <code>plugins_state.json</code> 只读</h3>
+<p>守护写的运行期状态（<code>status</code> / <code>error_count</code> / <code>last_error</code> / <code>ticks</code> / <code>guard_pid</code>）， 面板读它显示异常。<strong>插件不要写这个文件</strong>——面板写会被宿主拒绝 （<code>write_state=False</code>），你写了就是和守护抢同一份状态。</p>
+<p>自己需要持久化的东西放 <code>ctx.write_state('mine', {...})</code> → <code>plugins\&lt;id&gt;\data\mine.json</code>（原子写，<code>data\</code> 不进分发包）。</p>
+<h3 id="9-3-热重载标记-pluginsreload-flag">9.3 热重载标记 <code>plugins_reload.flag</code></h3>
+<p>面板装/卸插件后写这个文件；守护看到后在<strong>会话 idle</strong> 时执行 <code>on_exit('reload')</code> → 重建宿主。游戏会话中只记一行日志、等本局结束。</p>
+<p>手动触发（调试用）：</p>
+<pre><code class="lang-bat">rem 内容写什么无所谓，只要文件存在
+echo 1 &gt; &quot;C:\Program Files\WBOX\plugins_reload.flag&quot;</code></pre>
+<h3 id="9-4-自检">9.4 自检</h3>
+<pre><code class="lang-bat">rem 守护只读自检：进程表 / 配置 / 插件状态，结果写 self_test.txt
+&quot;C:\Program Files\WBOX\WBOX.exe&quot; --self-test</code></pre>
+<p>在 <code>on_self_test(self, out)</code> 里 <code>out.append('一行诊断')</code> 即可参与自检。</p>
+<h3 id="9-5-本地迭代循环-推荐">9.5 本地迭代循环（推荐）</h3>
+<pre><code class="lang-bat">rem 1) 把插件目录软链/复制到安装目录（或以管理员身份直接编辑）
+rem 2) 改完 plugin.py 后写重载标记
+echo 1 &gt; &quot;C:\Program Files\WBOX\plugins_reload.flag&quot;
+rem 3) 看日志最后 30 行
+powershell -NoProfile -Command &quot;Get-Content 'C:\Program Files\WBOX\guard.log' -Tail 30&quot;</code></pre>
+<p>改 <code>plugin.json</code> 一定要重新触发重载（manifest 只在加载期读一次）。</p>
+<hr>
+<h2 id="10-常见错误与排查">10. 常见错误与排查</h2>
+<div class="table-wrap"><table><thead><tr><th>现象（面板 / <code>plugins_state.json</code>）</th><th><code>detail</code> 原文</th><th>原因</th><th>处理</th></tr></thead><tbody><tr><td>菜单插件行显示&quot;未能加载&quot;</td><td><code>缺少 plugin.json</code></td><td>文件名拼错 / 放错层级（应在 <code>plugins\&lt;id&gt;\</code> 下）</td><td>检查文件名大小写</td></tr><tr><td>同上</td><td><code>plugin.json 读取/解析失败：...</code></td><td>JSON 语法错误、多了逗号、编码不是 UTF-8</td><td>用 <code>--check</code> 校验；存成 UTF-8（可带 BOM）</td></tr><tr><td>同上</td><td><code>id 非法（需匹配 ^[a-z][a-z0-9_]{1,31}$）：'DemoHello'</code></td><td>大写、连字符、数字开头、太短/太长</td><td>改成 <code>demo_hello</code> 这种</td></tr><tr><td>同上</td><td><code>manifest 缺少 name</code> / <code>version</code> / <code>api</code></td><td>必填字段漏写</td><td>四个必填：<code>id</code> / <code>name</code> / <code>version</code> / <code>api</code></td></tr><tr><td>同上</td><td><code>api 必须是整数：'1'</code></td><td>写成了 <code>&quot;1&quot;</code> 或 <code>true</code></td><td>写裸整数 <code>1</code></td></tr><tr><td>同上</td><td><code>entry 非法（应形如 plugin.py:Plugin）：'../x.py:Plugin'</code></td><td>绝对路径、含 <code>..</code>、类名不是标识符</td><td>只写相对文件名</td></tr><tr><td>同上</td><td><code>导入失败：ModuleNotFoundError: ...</code></td><td>依赖了未随包分发的第三方库</td><td>只用标准库 + <code>ctx.import_core()</code></td></tr><tr><td>同上</td><td><code>导入失败：SystemExit: ...</code></td><td>模块顶层调了 <code>sys.exit()</code>／有副作用</td><td>顶层只放定义</td></tr><tr><td>同上</td><td><code>类 Plugin 不存在（plugin.py）</code></td><td><code>entry</code> 的类名与文件里的类名不一致</td><td>统一叫 <code>Plugin</code></td></tr><tr><td>同上</td><td><code>构造失败：...</code></td><td><code>__init__</code> 里做了危险的事（读文件/建窗口）</td><td><code>__init__</code> 只赋初值</td></tr><tr><td>同上</td><td><code>依赖插件未加载：xxx</code></td><td><code>requires</code> 里的插件没成功加载</td><td>先修被依赖的插件</td></tr><tr><td>同上</td><td><code>插件要求 api=2，当前内核 api=1，需要更新的内核</code></td><td>插件比内核新</td><td>降 <code>api</code> 或升级 WBOX</td></tr><tr><td>状态 <code>conflict</code></td><td><code>id 与 plugins\xxx 冲突</code></td><td>两个目录声明了同一个 id</td><td>删掉一个</td></tr><tr><td>面板显示&quot;需要管理员权限&quot;</td><td>—</td><td>manifest 写了 <code>requires_admin: true</code></td><td>正常提示，不影响加载</td></tr><tr><td>每分钟一次&quot;抛异常&quot;日志</td><td><code>on_tick 抛异常：...</code></td><td>钩子里访问了不稳定的东西</td><td>看 <code>last_error</code>，修根因（不要靠降频）</td></tr><tr><td>反应变慢（<code>on_tick</code> 每 30 轮才调一次）</td><td>—</td><td><code>on_tick</code> 连败 ≥10 次已降频</td><td>同上</td></tr><tr><td>面板「＋」拒绝安装</td><td><code>插件包必须只有一个顶层目录</code></td><td>zip 里直接放了文件，或两个插件目录</td><td>重新按 §8.1 打包</td></tr><tr><td>同上</td><td><code>插件包不允许的文件类型 '.dll'</code></td><td>带了二进制</td><td>去掉，或改为运行时下载</td></tr><tr><td>同上</td><td><code>解压后总量超过 2 MB，拒绝安装</code></td><td>数据文件太大</td><td>精简，或运行时下载</td></tr><tr><td>同上</td><td><code>plugin.json 的 id (a) 与顶层目录 (b) 不一致</code></td><td>目录名与 manifest 不一致</td><td>改名</td></tr><tr><td>改了代码但没变化</td><td>—</td><td>没触发重载，或 manifest 改了没重载</td><td>写 <code>plugins_reload.flag</code></td></tr><tr><td>改内核文件无效</td><td>—</td><td><code>ace_native.py</code> / <code>popup_guard.py</code> 等冻结在 exe 里</td><td>插件侧无法修改，必须改内核并重新出包</td></tr></tbody></table></div>
+<hr>
+<h2 id="11-版本与兼容">11. 版本与兼容</h2>
+<h3 id="11-1-声明自己支持的-api-版本">11.1 声明自己支持的 API 版本</h3>
+<pre><code class="lang-json">{ &quot;api&quot;: 1 }</code></pre>
+<pre><code class="lang-python">class Plugin(WBOXPlugin):
+    API = 1        # 与 manifest.api 一致；不一致时宿主记日志、以 manifest 为准</code></pre>
+<h3 id="11-2-内核的行为">11.2 内核的行为</h3>
+<div class="table-wrap"><table><thead><tr><th>情况</th><th>行为</th></tr></thead><tbody><tr><td><code>api == 1</code></td><td>正常加载</td></tr><tr><td><code>api &lt; 1</code>（0 或负数）</td><td><code>status=bad_manifest</code>，<code>detail=api 必须 &gt;= 1</code></td></tr><tr><td><code>api &gt; 1</code></td><td><code>status=too_new</code>，<strong>不 import 代码</strong>，面板显示&quot;需要更新的内核&quot;</td></tr><tr><td>插件内 <code>API</code> 与 manifest 不一致</td><td>记一行日志，<strong>以 manifest 为准</strong>，不阻止加载</td></tr><tr><td><code>api</code> 小于内核的 <code>API_VERSION</code>（将来可能发生）</td><td>当前内核 <code>API_VERSION = 1</code>，还没有&quot;更低的合法值&quot;，所以这一格暂时不会出现；内核将来升到 2 时，<code>api: 1</code> 的旧插件按&quot;只加不改&quot;的契约继续加载，新增钩子走默认实现</td></tr></tbody></table></div>
+<p>版本策略是<strong>只加不改</strong>：新增字段/新增钩子会提升 <code>API_VERSION</code>，删除字段或改变 语义属于破坏性变更，需要新的主版本。所以放心按 <code>api: 1</code> 写，内核升级不会悄悄 改你的钩子签名。</p>
+<hr>
+<h2 id="12-参考实现">12. 参考实现</h2>
+<div class="table-wrap"><table><thead><tr><th>插件</th><th>位置</th><th>值得看的地方</th></tr></thead><tbody><tr><td><code>gamepp</code></td><td><code>plugins\gamepp\plugin.py</code></td><td>最简洁的完整例子：所有权语义（只关自己拉起的）、<code>retry_close</code> 用法、注册表探测</td></tr><tr><td><code>afterburner</code></td><td><code>plugins\afterburner\plugin.py</code></td><td>父子进程树处理、RTSS 家族</td></tr><tr><td><code>ace</code></td><td><code>plugins\ace\plugin.py</code></td><td><code>ctx.import_core('ace_native')</code> + 四道闸门的正确调用姿势</td></tr><tr><td><code>popup</code></td><td><code>plugins\popup\plugin.py</code></td><td><code>request_fast_poll</code> 登记快节拍、<code>protect_names</code> 保护名单</td></tr></tbody></table></div>
+<p>随安装包分发的最小示例见同目录下的 <code>plugin-template\</code> （<code>plugin.json</code> + <code>plugin.py</code>，复制到 <code>plugins\&lt;你的id&gt;\</code> 并改名即可）。</p>
+<hr>
+<h2 id="附录-字段速查-一页版">附录：字段速查（一页版）</h2>
+<pre><code class="lang-json">{
+  &quot;id&quot;: &quot;demo_hello&quot;,
+  &quot;name&quot;: &quot;示例插件&quot;,
+  &quot;version&quot;: &quot;1.0.0&quot;,
+  &quot;api&quot;: 1,
+  &quot;entry&quot;: &quot;plugin.py:Plugin&quot;,
+  &quot;icon&quot;: &quot;pulse&quot;,
+  &quot;order&quot;: 50,
+  &quot;home&quot;: true,
+  &quot;toggle&quot;: [&quot;demo_hello_enabled&quot;],
+  &quot;tip&quot;: &quot;说明&quot;,
+  &quot;config&quot;: {&quot;keys&quot;: [&quot;demo_hello&quot;], &quot;defaults&quot;: {}},
+  &quot;settings&quot;: [
+    { &quot;key&quot;: &quot;demo_hello_enabled&quot;, &quot;type&quot;: &quot;bool&quot;, &quot;label&quot;: &quot;启用示例功能&quot; },
+    { &quot;key&quot;: &quot;demo_hello.mode&quot;, &quot;type&quot;: &quot;choice&quot;, &quot;label&quot;: &quot;显示位置&quot;,
+      &quot;options&quot;: [ [&quot;tr&quot;, &quot;右上&quot;], [&quot;bl&quot;, &quot;左下&quot;] ] }
+  ],
+  &quot;requires&quot;: [],
+  &quot;builtin&quot;: false,
+  &quot;requires_admin&quot;: false
+}</code></pre>
+<pre><code class="lang-python">from plugin_api import WBOXPlugin
+
+
+class Plugin(WBOXPlugin):
+    DEFAULT_CONFIG = {'demo_hello_enabled': True}
+
+    def on_config(self, cfg):
+        self.enabled = bool(cfg.get('demo_hello_enabled', True))
+
+    def on_session_start(self, tick):
+        if tick.procs is None:
+            return
+        self.ctx.log('会话开始：%s' % ', '.join(tick.games))
+
+    def on_session_close(self, tick):
+        if self.ctx.procs() is None:
+            self.ctx.retry_close(2)
+            return
+
+    def on_tick(self, tick):
+        if tick.session.state != 'active':
+            return</code></pre>
+</body>
+</html>

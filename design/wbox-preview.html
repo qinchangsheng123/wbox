@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WBOX · 液态玻璃 UI 设计稿 v3.4.0（待确认）</title>
+<style>
+/* ============================================================
+   WBOX UI Design System v3.4.0
+   Brand: WBOX（原「僚机 Wingman」）· Icon: 大写 W · 黑白两色
+   Material: Liquid Glass（半透明 + 背景模糊 + 边缘高光）
+   Language: iOS 26 风格（分组列表 / 胶囊开关 / 圆形按钮 / 连续圆角）
+   令牌单一来源：本文件 :root；落地时对应 settings_gui.THEMES 与 design/generate_icons.py
+   ============================================================ */
+:root{
+  --font:"SF Pro Display","SF Pro Text",-apple-system,BlinkMacSystemFont,
+         "Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI","PingFang SC",sans-serif;
+  --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --r-win:26px; --r-card:20px; --r-row:14px; --r-ctl:12px;
+  --hair-w:1px;
+}
+
+/* ---------- 令牌：玻璃白 ---------- */
+[data-theme="light"], .skin-light{
+  --fg:#0A0A0A; --t2:rgba(0,0,0,.58); --t3:rgba(0,0,0,.44); --t4:rgba(0,0,0,.30);
+  --hair:rgba(0,0,0,.085); --hair-strong:rgba(0,0,0,.14);
+  --fill:rgba(0,0,0,.045); --fill-2:rgba(0,0,0,.075); --press:rgba(0,0,0,.10);
+  --inset:rgba(255,255,255,.42);
+  --glass:rgba(255,255,255,.54);
+  --glass-hi:rgba(255,255,255,.92);
+  --glass-line:rgba(255,255,255,.55);
+  --glass-edge:rgba(0,0,0,.07);
+  --shadow:0 28px 70px rgba(0,0,0,.16), 0 4px 14px rgba(0,0,0,.06);
+  --shadow-float:0 34px 80px rgba(0,0,0,.20), 0 6px 18px rgba(0,0,0,.08);
+  --switch-off:rgba(120,120,128,.30);
+  --knob:#FFFFFF; --knob-shadow:0 2px 5px rgba(0,0,0,.18), 0 0 1px rgba(0,0,0,.12);
+  --on:#000000; --on-knob:#FFFFFF;
+  --icon-bg:#000000; --icon-fg:#FFFFFF;
+  --amb0:#E7E7EC; --amb1:#FFFFFF; --amb2:#C4C4CF; --amb3:#FBFBFD;
+  --scrim:rgba(255,255,255,.30);
+  --menu-base:rgba(252,252,253,.72);
+  --pop-base:rgba(252,252,253,.97);
+}
+/* ---------- 令牌：玻璃黑 ---------- */
+[data-theme="dark"], .skin-dark{
+  --fg:#FAFAFA; --t2:rgba(255,255,255,.62); --t3:rgba(255,255,255,.42); --t4:rgba(255,255,255,.28);
+  --hair:rgba(255,255,255,.12); --hair-strong:rgba(255,255,255,.18);
+  --fill:rgba(255,255,255,.075); --fill-2:rgba(255,255,255,.11); --press:rgba(255,255,255,.15);
+  --inset:rgba(255,255,255,.055);
+  --glass:rgba(20,20,23,.66);
+  --glass-hi:rgba(255,255,255,.22);
+  --glass-line:rgba(255,255,255,.13);
+  --glass-edge:rgba(0,0,0,.55);
+  --shadow:0 30px 80px rgba(0,0,0,.62), 0 4px 16px rgba(0,0,0,.40);
+  --shadow-float:0 36px 90px rgba(0,0,0,.70), 0 8px 22px rgba(0,0,0,.45);
+  --switch-off:rgba(120,120,128,.38);
+  --knob:#FFFFFF; --knob-shadow:0 2px 5px rgba(0,0,0,.45);
+  --on:#FFFFFF; --on-knob:#0A0A0A;
+  --icon-bg:#FFFFFF; --icon-fg:#000000;
+  --amb0:#050507; --amb1:#26262E; --amb2:#0D0D11; --amb3:#1B1B22;
+  --scrim:rgba(0,0,0,.36);
+  --menu-base:rgba(28,28,32,.80);
+  --pop-base:rgba(30,30,34,.97);
+}
+
+/* ---------- 基础 ---------- */
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); font-size:14px; line-height:1.5;
+  color:var(--fg); background:var(--amb0);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+button{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--fg); outline-offset:3px; border-radius:6px}
+.defs{position:absolute; width:0; height:0; overflow:hidden}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+
+/* 背景壁纸：玻璃需要可折射的环境。纯灰阶色块，不引入彩色。 */
+.wallpaper{
+  position:fixed; inset:0; z-index:-1;
+  background:
+    radial-gradient(780px 580px at 6% 0%, var(--amb1) 0%, transparent 58%),
+    radial-gradient(700px 540px at 98% 6%, var(--amb2) 0%, transparent 62%),
+    radial-gradient(720px 620px at 26% 40%, var(--amb2) 0%, transparent 58%),
+    radial-gradient(920px 660px at 76% 46%, var(--amb3) 0%, transparent 60%),
+    radial-gradient(1200px 840px at 44% 114%, var(--amb1) 0%, transparent 66%),
+    var(--amb0);
+}
+.wallpaper::after{
+  content:""; position:absolute; inset:0;
+  background:radial-gradient(1400px 900px at 50% 0%, var(--scrim), transparent 70%);
+  pointer-events:none;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky; top:0; z-index:30;
+  display:flex; align-items:center; gap:20px;
+  padding:14px 28px; margin:18px 24px 0; border-radius:20px;
+  background:var(--glass); backdrop-filter:blur(26px) saturate(170%);
+  -webkit-backdrop-filter:blur(26px) saturate(170%);
+  box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line),
+             0 10px 30px rgba(0,0,0,.07);
+}
+.tb-brand{display:flex; align-items:baseline; gap:10px; margin-right:4px}
+.tb-brand strong{font-size:16px; font-weight:700; letter-spacing:-.02em}
+.tb-tag{
+  font-size:11px; color:var(--t3); letter-spacing:.02em;
+  padding:3px 8px; border-radius:8px; background:var(--fill);
+}
+.tabs{display:flex; gap:2px; margin-left:auto; padding:3px; border-radius:12px; background:var(--fill)}
+.tab{
+  appearance:none; border:0; background:transparent; cursor:pointer;
+  padding:7px 14px; border-radius:9px; font-size:13px; color:var(--t2);
+  transition:background-color .16s var(--ease), color .16s var(--ease);
+}
+.tab:hover{color:var(--fg)}
+.tab[aria-pressed="true"]{background:var(--fg); color:var(--amb0)}
+.seg{display:flex; padding:3px; border-radius:12px; background:var(--fill); gap:2px}
+.seg button{
+  appearance:none; border:0; background:transparent; cursor:pointer;
+  padding:7px 12px; border-radius:9px; font-size:12.5px; color:var(--t2);
+}
+.seg button[aria-pressed="true"]{background:var(--glass); color:var(--fg); box-shadow:0 1px 3px rgba(0,0,0,.10)}
+
+/* ---------- 版心 ---------- */
+main{max-width:1240px; margin:0 auto; padding:36px 32px 72px}
+.view{display:none}
+.view.active{display:block; animation:rise .26s var(--ease-out)}
+body.static .view.active{animation:none}
+@keyframes rise{from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none}}
+.eyebrow{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--t3); margin:0 0 10px}
+h2.sec{font-size:24px; font-weight:650; letter-spacing:-.02em; margin:0 0 8px}
+p.lede{font-size:14px; line-height:1.75; color:var(--t2); margin:0 0 28px; max-width:760px}
+.cap{font-size:11.5px; color:var(--t3); margin:10px 0 0; letter-spacing:.01em}
+.grid2{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+
+/* ---------- 改动清单 ---------- */
+.changes{display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin:0 0 44px}
+@media (max-width:1080px){.changes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.change{
+  padding:14px 14px 16px; border-radius:16px;
+  background:var(--glass); backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+  box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line);
+}
+.change .n{font-family:var(--mono); font-size:11px; color:var(--t3)}
+.change h3{font-size:13.5px; font-weight:600; margin:7px 0 5px; letter-spacing:-.01em}
+.change p{font-size:11.5px; line-height:1.65; color:var(--t2); margin:0}
+
+/* ---------- 玻璃基材 ---------- */
+.glass{
+  position:relative;
+  background:var(--glass);
+  backdrop-filter:blur(30px) saturate(170%);
+  -webkit-backdrop-filter:blur(30px) saturate(170%);
+  border-radius:var(--r-win);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    inset 0 0 0 1px var(--glass-line),
+    0 0 0 1px var(--glass-edge),
+    var(--shadow);
+}
+.glass::after{
+  content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:
+    radial-gradient(120% 70% at 18% 0%, rgba(255,255,255,.22), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.10), transparent 34%);
+}
+.glass > *{position:relative; z-index:1}
+/* skin 必须显式接管文字色，否则深色面板会继承页面浅色文字变量 */
+.skin-light, .skin-dark{color:var(--fg)}
+
+/* ---------- 应用窗口 ---------- */
+.app-window{width:640px; max-width:100%; overflow:hidden}
+/* 标题栏 = 唯一的一行头部：字标兼菜单入口在左，圆形加号靠右，窗口控制最右并用发丝线隔开 */
+.titlebar{
+  height:48px; display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:0 8px 0 28px; -webkit-app-region:drag;
+}
+.titlebar .t{font-size:11px; color:var(--t4); letter-spacing:.10em; text-transform:uppercase}
+/* 方案4 单入口：字标自己就是菜单入口（带下拉箭头），右上只剩一枚圆形加号 */
+.tb-menu{
+  display:flex; align-items:center; gap:6px; flex:none; height:34px;
+  margin-left:-8px; padding:0 9px 0 8px;
+  border:0; border-radius:11px; background:transparent; cursor:pointer;
+  color:var(--fg); text-align:left; -webkit-app-region:no-drag;
+  transition:background-color .15s var(--ease);
+}
+.tb-menu:hover{background:var(--fill)}
+.tb-menu[aria-expanded="true"]{background:var(--fill-2)}
+.tb-menu .wordmark{font-size:22px; letter-spacing:-.035em; line-height:1; margin:0}
+.tb-menu .chev{
+  width:12px; height:12px; flex:none; color:var(--t3);
+  transition:transform .2s var(--ease), color .15s var(--ease);
+}
+.tb-menu:hover .chev{color:var(--t2)}
+.tb-menu[aria-expanded="true"] .chev{transform:rotate(180deg); color:var(--fg)}
+.tb-add{
+  width:32px; height:32px; display:grid; place-items:center; padding:0; flex:none;
+  margin-left:auto; margin-right:2px;
+  border:0; border-radius:50%; background:var(--fill); cursor:pointer;
+  color:var(--fg); -webkit-app-region:no-drag;
+  transition:background-color .15s var(--ease), transform .12s var(--ease);
+}
+.tb-add:hover{background:var(--fill-2)}
+.tb-add:active{transform:scale(.94)}
+.tb-add svg{width:17px; height:17px}
+.wctrls{display:flex; gap:2px; padding-left:7px; margin-left:1px; box-shadow:inset 1px 0 0 var(--hair)}
+.wbtn{
+  width:34px; height:26px; display:grid; place-items:center;
+  border:0; background:transparent; border-radius:8px; cursor:pointer; color:var(--t3);
+  transition:background-color .14s var(--ease), color .14s var(--ease);
+}
+.wbtn:hover{background:var(--fill-2); color:var(--fg)}
+.wbtn svg{width:11px; height:11px}
+
+/* 品牌字标：标题栏里 22 / 700（并进 .tb-menu 热区），锁定卡里放大到 40（靠 inline 覆盖） */
+.wordmark{font-size:26px; font-weight:700; letter-spacing:-.035em; line-height:1; margin:0}
+.titlebar .wordmark{font-size:22px; letter-spacing:-.035em}
+
+/* ---------- 分组列表 ---------- */
+.app-body{padding:4px 8px 8px}
+.list{
+  background:var(--inset); border-radius:var(--r-card); padding:6px;
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 1px 0 var(--glass-hi);
+}
+.row{
+  position:relative; display:flex; align-items:center; gap:14px;
+  height:52px; padding:0 10px 0 14px; border-radius:var(--r-row);
+  transition:background-color .16s var(--ease);
+}
+.row:hover{background:var(--fill)}
+.row + .row::before{
+  content:""; position:absolute; top:0; left:50px; right:12px; height:1px; background:var(--hair);
+}
+.row .fi{width:22px; height:22px; color:var(--fg); opacity:.92; flex:none}
+.row .nm{font-size:15px; font-weight:500; letter-spacing:-.012em; flex:1; min-width:0}
+.row-acts{display:flex; align-items:center; gap:4px; flex:none}
+.ghost{
+  width:30px; height:30px; display:grid; place-items:center; padding:0;
+  border:0; border-radius:9px; background:transparent; cursor:pointer;
+  color:var(--t2); transition:background-color .15s var(--ease), color .15s var(--ease);
+}
+.ghost:hover{background:var(--fill-2); color:var(--fg)}
+.ghost svg{width:17px; height:17px}
+.ghost.danger:hover{color:#000; background:rgba(255,59,48,.14)}
+
+/* ---------- 行内设置浮层：点行尾滑块展开，删除收进浮层底部 ---------- */
+.win-bleed{overflow:visible}
+.row.is-open .tip{opacity:0}
+.ghost.row-more[aria-expanded="true"]{background:var(--fill-2); color:var(--fg)}
+.row-pop{
+  position:absolute; right:4px; top:calc(100% - 4px); z-index:14;
+  width:296px; padding:7px; border-radius:16px; text-align:left;
+  background:var(--pop-base); backdrop-filter:blur(30px) saturate(170%);
+  -webkit-backdrop-filter:blur(30px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line),
+    0 0 0 1px var(--glass-edge), 0 18px 46px rgba(0,0,0,.20);
+  opacity:0; visibility:hidden;
+  transform:translateY(-6px) scale(.98); transform-origin:100% 0;
+  pointer-events:none;
+  transition:opacity .15s var(--ease), transform .18s var(--ease-out);
+}
+.row.is-open .row-pop{opacity:1; visibility:visible; transform:none; pointer-events:auto}
+.rp-head{display:flex; align-items:baseline; gap:7px; padding:5px 8px 7px}
+.rp-name{font-size:13px; font-weight:600; letter-spacing:-.01em}
+.rp-ver{font-size:10.5px; color:var(--t3); font-family:var(--mono)}
+.rp-item{
+  display:flex; align-items:center; gap:10px; min-height:32px;
+  padding:4px 8px; border-radius:9px;
+}
+.rp-item:hover{background:var(--fill)}
+.rp-lb{font-size:13px; flex:1; min-width:0; line-height:1.35}
+.rp-sub{display:block; font-size:11px; color:var(--t3); line-height:1.45; margin-top:2px}
+.rp-col{display:block}
+.rp-path{
+  display:block; margin-top:5px; padding:6px 9px; border-radius:8px;
+  font-size:11.5px; font-family:var(--mono); color:var(--t2);
+  background:var(--inset); box-shadow:inset 0 0 0 1px var(--hair);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.rp-pill{
+  display:inline-flex; align-items:center; gap:4px; flex:none;
+  height:24px; padding:0 9px; border-radius:8px;
+  font-size:12px; color:var(--fg);
+  background:var(--inset); box-shadow:inset 0 0 0 1px var(--hair);
+}
+.rp-pill svg{width:11px; height:11px; color:var(--t3)}
+/* 浮层里的小号开关：38 × 22，钮 18，行程 16 */
+.sw.sm{width:38px; height:22px; border-radius:12px}
+.sw.sm::after{width:18px; height:18px; top:2px; left:2px}
+.sw.sm[aria-checked="true"]::after{transform:translateX(16px)}
+/* 数字步进 */
+.stepper{
+  display:flex; align-items:center; flex:none; gap:1px; padding:2px;
+  border-radius:9px; background:var(--inset); box-shadow:inset 0 0 0 1px var(--hair);
+}
+.stepper button{
+  width:21px; height:20px; display:grid; place-items:center; padding:0;
+  border:0; border-radius:6px; background:transparent; color:var(--t2);
+  cursor:pointer; font-size:13px; line-height:1;
+}
+.stepper button:hover{background:var(--fill-2); color:var(--fg)}
+.stepper b{font-size:12px; font-weight:500; padding:0 7px; white-space:nowrap; font-variant-numeric:tabular-nums}
+.rp-sep{height:1px; background:var(--hair); margin:6px 8px}
+.rp-more{
+  display:flex; align-items:center; gap:6px; width:calc(100% - 0px);
+  padding:5px 8px; border:0; border-radius:9px; background:transparent;
+  font-size:12px; color:var(--t2); cursor:pointer; text-align:left;
+}
+.rp-more:hover{background:var(--fill); color:var(--fg)}
+.rp-more svg{width:12px; height:12px; color:var(--t3)}
+.rp-del{
+  display:flex; align-items:center; gap:8px; width:100%; height:32px; padding:0 8px;
+  border:0; border-radius:9px; background:transparent; cursor:pointer;
+  font-size:13px; color:#D93025; text-align:left;
+}
+.rp-del:hover{background:rgba(255,59,48,.12)}
+.rp-del svg{width:15px; height:15px}
+
+/* 胶囊开关（iOS） */
+.sw{
+  position:relative; width:46px; height:28px; flex:none; padding:0;
+  border:0; border-radius:15px; cursor:pointer;
+  background:var(--on);
+  transition:background-color .22s var(--ease);
+}
+.sw::after{
+  content:""; position:absolute; top:2px; left:2px; width:24px; height:24px;
+  border-radius:50%; background:var(--on-knob); box-shadow:var(--knob-shadow);
+  transition:transform .24s var(--ease-out), background-color .22s var(--ease);
+}
+.sw[aria-checked="false"]{background:var(--switch-off)}
+.sw[aria-checked="false"]::after{transform:translateX(0)}
+.sw[aria-checked="true"]::after{transform:translateX(18px)}
+
+/* 简介提示 */
+.tip{
+  position:absolute; left:50px; top:calc(100% - 10px); z-index:6;
+  width:392px; max-width:calc(100% - 60px);
+  padding:10px 13px; border-radius:13px; font-size:12px; line-height:1.62; color:var(--fg);
+  background:var(--glass); backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line),
+             0 14px 34px rgba(0,0,0,.16);
+  opacity:0; transform:translateY(-4px); pointer-events:none;
+  transition:opacity .18s var(--ease), transform .18s var(--ease);
+}
+.row.show-tip .tip,.row:hover .tip{opacity:1; transform:none}
+
+/* ---------- 齿轮菜单浮层 ---------- */
+.menu{
+  width:300px; padding:6px; border-radius:22px;
+  background:var(--menu-base); backdrop-filter:blur(34px) saturate(190%);
+  -webkit-backdrop-filter:blur(34px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line),
+    0 0 0 1px var(--glass-edge), var(--shadow-float);
+  max-height:560px; overflow:hidden;
+}
+.menu::before{
+  content:""; position:absolute; left:0; right:0; bottom:0; height:34px; z-index:4;
+  border-radius:0 0 22px 22px; pointer-events:none;
+  background:linear-gradient(to top, var(--glass), transparent);
+}
+.m-item{
+  width:100%; height:34px; display:flex; align-items:center; gap:10px;
+  padding:0 10px; border:0; border-radius:10px; background:transparent;
+  cursor:pointer; font-size:13px; letter-spacing:-.008em; color:var(--fg); text-align:left;
+  transition:background-color .14s var(--ease);
+}
+.m-item:hover{background:var(--fill)}
+.m-item .mi{width:16px; height:16px; color:var(--fg); opacity:.85; flex:none}
+.m-hint{margin-left:auto; font-size:12px; color:var(--t3); white-space:nowrap}
+.m-sep{height:1px; background:var(--hair); margin:6px 10px}
+.m-head{font-size:11px; letter-spacing:.10em; text-transform:uppercase; color:var(--t3); padding:8px 12px 4px}
+.m-sw{
+  margin-left:auto; position:relative; width:38px; height:22px; border-radius:12px;
+  background:var(--on); flex:none;
+}
+.m-sw::after{
+  content:""; position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%;
+  background:var(--on-knob); box-shadow:var(--knob-shadow);
+}
+.m-sw.off{background:var(--switch-off)}
+.m-sw.off::after{right:auto; left:2px; background:var(--knob)}
+.m-ck{margin-left:auto; width:15px; height:15px; color:var(--fg)}
+.m-foot{font-size:11px; color:var(--t3); padding:8px 12px 6px; display:flex; justify-content:space-between}
+.menu-scroll{max-height:520px; overflow-y:auto; overscroll-behavior:contain; position:relative;
+  scrollbar-width:none}
+.menu-scroll::-webkit-scrollbar{width:0; height:0}
+.m-sw{display:block}
+
+/* 深色展示台：玻璃要黑，背景必须先黑 */
+.stage-light{
+  display:inline-block; max-width:100%;
+  border-radius:28px; padding:26px 26px 18px;
+  background:
+    radial-gradient(700px 420px at 12% 0%, #FFFFFF 0%, transparent 62%),
+    radial-gradient(660px 460px at 96% 98%, #DEDEE8 0%, transparent 64%),
+    #F4F4F7;
+  box-shadow:inset 0 0 0 1px rgba(0,0,0,.055), 0 22px 54px rgba(0,0,0,.10);
+}
+.stage-dark{
+  display:inline-block; max-width:100%;
+  border-radius:28px; padding:26px;
+  background:
+    radial-gradient(720px 420px at 18% 0%, #2B2B34 0%, transparent 60%),
+    radial-gradient(620px 440px at 92% 100%, #17171D 0%, transparent 62%),
+    #0A0A0D;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.10), 0 22px 54px rgba(0,0,0,.26);
+}
+.stage-dark .cap{color:rgba(255,255,255,.46)}
+
+/* 面板 + 菜单同台 */
+.stage{position:relative; padding:8px 0 40px}
+.win-holder{position:relative; width:640px; max-width:100%}
+/* 菜单从字标正下方展开（入口在左上，浮层也贴左上，符合「点哪弹哪」） */
+.menu-slot{position:absolute; top:52px; left:20px; z-index:9}
+.menu-slot .menu{display:none}
+.menu-slot.is-open .menu{display:block; animation:pop .2s var(--ease-out)}
+@keyframes pop{from{opacity:0; transform:translateY(-6px) scale(.985)} to{opacity:1; transform:none}}
+@media (max-width:1040px){.menu-slot{position:static; margin-top:16px}}
+
+/* 菜单页：完整展开，便于逐项评审 */
+.menu-full .menu{max-height:none}
+.menu-full .menu-scroll{max-height:none}
+.menu-full .menu::before{display:none}
+#v-menu .stage{min-height:800px}
+
+/* ---------- 安装向导 ---------- */
+.setup{width:620px; max-width:100%; padding:0; overflow:hidden}
+.setup-head{padding:16px 24px 0; display:flex; align-items:center; justify-content:space-between}
+.setup-body{padding:18px 24px 22px}
+.setup-title{font-size:20px; font-weight:650; letter-spacing:-.02em; margin:4px 0 6px}
+.setup-sub{font-size:12px; color:var(--t2); margin:0 0 22px; line-height:1.6}
+.field{margin-bottom:16px}
+.field .lb{display:block; font-size:11.5px; color:var(--t3); margin:0 0 6px; letter-spacing:.02em}
+.input{
+  display:flex; align-items:center; gap:10px; height:44px; padding:0 12px;
+  border-radius:14px; background:var(--inset);
+  box-shadow:inset 0 0 0 1px var(--hair), inset 0 1px 0 var(--glass-hi);
+  font-size:13px; font-family:var(--mono); color:var(--fg);
+}
+.input .ico{width:16px; height:16px; color:var(--t3); flex:none}
+.input .v{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.input .browse{
+  border:0; background:var(--fill); color:var(--fg); font-size:12px; cursor:pointer;
+  height:28px; padding:0 12px; border-radius:9px;
+}
+.options{border-radius:16px; background:var(--inset); box-shadow:inset 0 0 0 1px var(--hair); padding:4px 0; margin:0 0 22px}
+.opt{display:flex; align-items:center; gap:12px; height:46px; padding:0 14px; position:relative}
+.opt + .opt::before{content:""; position:absolute; top:0; left:14px; right:14px; height:1px; background:var(--hair)}
+.opt .txt{font-size:14px; font-weight:500}
+.opt .sub{font-size:11.5px; color:var(--t3); margin-left:2px}
+.opt .sw{margin-left:auto}
+.setup-foot{display:flex; align-items:center; gap:12px}
+.btn-primary{
+  flex:1; height:46px; border:0; border-radius:23px; cursor:pointer;
+  background:var(--fg); color:var(--amb0); font-size:14px; font-weight:600;
+  letter-spacing:-.01em;
+  box-shadow:0 8px 22px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.18);
+  transition:transform .16s var(--ease), box-shadow .16s var(--ease);
+}
+.btn-primary:hover{transform:translateY(-1px); box-shadow:0 12px 28px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.2)}
+.btn-text{
+  height:46px; padding:0 16px; border:0; border-radius:23px; cursor:pointer;
+  background:transparent; color:var(--t2); font-size:13.5px;
+  transition:background-color .16s var(--ease), color .16s var(--ease);
+}
+.btn-text:hover{background:var(--fill); color:var(--fg)}
+.progress{height:5px; border-radius:3px; background:var(--fill-2); overflow:hidden; margin:2px 0 10px}
+.progress i{display:block; height:100%; border-radius:3px; background:var(--fg); width:62%}
+.done-card{width:420px; max-width:100%; padding:26px 24px 22px; text-align:center}
+.done-ic{
+  width:52px; height:52px; margin:0 auto 14px; border-radius:50%;
+  display:grid; place-items:center; background:var(--fg); color:var(--amb0);
+}
+.done-ic svg{width:26px; height:26px}
+.done-card h3{font-size:17px; font-weight:650; margin:0 0 6px; letter-spacing:-.01em}
+.done-card p{font-size:12px; color:var(--t2); line-height:1.65; margin:0 0 18px}
+.done-card .btn-primary{height:42px; border-radius:21px; flex:none; width:100%}
+
+/* ---------- 图标板 ---------- */
+.lockup{display:flex; align-items:center; gap:22px; padding:28px; border-radius:22px; background:var(--glass);
+  backdrop-filter:blur(24px) saturate(160%); -webkit-backdrop-filter:blur(24px) saturate(160%);
+  box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line)}
+.lockup .wordmark{font-size:40px; letter-spacing:-.04em}
+.lockup .sub{font-size:11.5px; color:var(--t3); letter-spacing:.16em; text-transform:uppercase; margin-top:4px}
+.icon{display:block; filter:drop-shadow(0 10px 22px rgba(0,0,0,.16))}
+.sizes{display:flex; align-items:flex-end; gap:26px; flex-wrap:wrap; padding:26px; border-radius:22px; background:var(--inset); box-shadow:inset 0 0 0 1px var(--hair)}
+.size-cell{text-align:center}
+.size-cell .lb{display:block; font-size:10.5px; color:var(--t3); margin-top:10px; font-family:var(--mono)}
+.grid-board{position:relative; width:300px; height:300px; border-radius:20px; overflow:hidden;
+  background:repeating-linear-gradient(0deg, var(--hair) 0 1px, transparent 1px 30px),
+             repeating-linear-gradient(90deg, var(--hair) 0 1px, transparent 1px 30px), var(--inset)}
+.grid-board svg{position:absolute; inset:0; width:100%; height:100%}
+.glabel{position:absolute; font-size:10px; font-family:var(--mono); color:var(--t3); background:var(--amb0); padding:1px 4px; border-radius:4px}
+.taskbar{
+  display:flex; align-items:center; justify-content:center; gap:10px; height:52px; padding:0 18px;
+  border-radius:16px; background:rgba(24,24,27,.88); box-shadow:0 12px 30px rgba(0,0,0,.28);
+}
+.taskbar .slot{width:40px; height:40px; display:grid; place-items:center; border-radius:11px; background:rgba(255,255,255,.07)}
+.taskbar .slot.on{background:rgba(255,255,255,.14)}
+.taskbar .slot svg{width:24px; height:24px; color:#E9E9EC; opacity:.65}
+
+/* 规范表 */
+.spec{width:100%; border-collapse:collapse; font-size:12.5px}
+.spec th{
+  text-align:left; font-weight:500; color:var(--t3); font-size:11px; letter-spacing:.06em;
+  text-transform:uppercase; padding:10px 12px; border-bottom:1px solid var(--hair);
+}
+.spec td{padding:11px 12px; border-bottom:1px solid var(--hair); color:var(--fg); vertical-align:top}
+.spec td.dim{color:var(--t2)}
+.spec tr:last-child td{border-bottom:0}
+.spec .mono{font-family:var(--mono); font-size:11.5px; color:var(--t2)}
+.cardish{padding:22px; border-radius:20px; background:var(--glass); backdrop-filter:blur(20px) saturate(150%);
+  -webkit-backdrop-filter:blur(20px) saturate(150%); box-shadow:inset 0 1px 0 var(--glass-hi), inset 0 0 0 1px var(--glass-line)}
+.cardish h3{font-size:14px; font-weight:600; margin:0 0 10px; letter-spacing:-.01em}
+.cardish ul{margin:0; padding-left:18px; color:var(--t2); font-size:12.5px; line-height:1.85}
+.cardish li::marker{color:var(--t4)}
+.note{display:flex; gap:10px; padding:14px 16px; border-radius:14px; background:var(--fill); font-size:12px; line-height:1.7; color:var(--t2); margin-top:14px}
+.note b{color:var(--fg); font-weight:600}
+
+footer{max-width:1240px; margin:0 auto; padding:0 32px 48px; font-size:11.5px; color:var(--t3); display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap}
+</style>
+</head>
+<body>
+
+<!-- ============ 图标与通用符号 ============ -->
+<svg class="defs" aria-hidden="true"><defs>
+  <!-- 应用图标：连续圆角方块 + 大写 W（黑白两色） -->
+  <symbol id="wbox-icon" viewBox="0 0 100 100">
+    <rect width="100" height="100" rx="24" fill="var(--icon-bg)"/>
+    <path d="M18 28H28L38 62L50 40L62 62L72 28H82L68 72H58L50 56L42 72H32Z" fill="var(--icon-fg)"/>
+  </symbol>
+  <!-- 无容器 W：界面内小尺寸 / 任务栏用 -->
+  <symbol id="w-glyph" viewBox="0 0 100 100">
+    <path d="M18 28H28L38 62L50 40L62 62L72 28H82L68 72H58L50 56L42 72H32Z" fill="currentColor"/>
+  </symbol>
+
+  <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 11.4L21 3.6L14.4 20.6L11.2 14.2Z M11.2 14.2L21 3.6"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5.5H21V18.5H3Z M5.6 14.4H8.8L10.9 9.6L13.4 16.6L15.3 12.4H18.6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.4L20.6 6v7.1L12 21.6L3.4 13.1V6Z M8.2 11.9L10.9 14.6L15.8 9.3"/></symbol>
+  <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 7.2H15.2V19.6H2.6Z M2.6 11.4H15.2 M17.4 3.4L21.6 7.6 M21.6 3.4L17.4 7.6"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 4.6H21.2V16.4H2.8Z M9 20.4H15 M12 16.4V20.4 M6.4 12.4L9 9.4L11.2 11.6L14.4 7.8L17.4 11"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14 M5 12h14"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M9.6 8.6h4.8l2 2v2.8l-2 2H9.6l-2-2v-2.8Z M12 5.4V2.6 M17.4 8.6l2.3-1.3 M17.4 15.4l2.3 1.3 M12 18.6v2.8 M6.6 15.4l-2.3 1.3 M6.6 8.6L4.3 7.3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"><path d="M3.6 8h16.8 M3.6 16h16.8"/><circle cx="9.4" cy="8" r="2.1" fill="var(--inset)" stroke="currentColor"/><circle cx="14.6" cy="16" r="2.1" fill="var(--inset)" stroke="currentColor"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 6.4h15.2 M9.4 6.4V4.2h5.2v2.2 M6.6 6.4l.9 14.2h9l.9-14.2 M10.2 10.2v6.6 M13.8 10.2v6.6"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l12 12 M18 6L6 18"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5.5 5.5h13v13h-13z"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2" fill="currentColor"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M7.4 4.6L19.4 12L7.4 19.4Z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M6 6h12v12H6Z"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"><path d="M12 3.4v8.2 M6.9 6.6a8.2 8.2 0 1010.2 0"/></symbol>
+  <symbol id="i-rescan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 12.6L5.5 8L10 4.6L16.4 5.6L19.4 9.2 M15.8 9.2h3.8V5.4 M19.6 11.4L18.5 16L14 19.4L7.6 18.4L4.6 14.8 M8.2 14.8H4.4v3.8"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.4h16v15.2H4Z M7.6 9h8.8 M7.6 12.4h8.8 M7.6 15.8h5.6"/></symbol>
+  <symbol id="i-cfg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"><path d="M4 6.6h16 M4 12h16 M4 17.4h16 M8.6 4.4v4.4 M16 9.8v4.4 M11.4 15.2v4.4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.6v2 M12 19.4v2 M2.6 12h2 M19.4 12h2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M18.7 5.3l-1.4 1.4 M6.7 17.3l-1.4 1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M17.6 14.6A6.8 6.8 0 019.4 6.4a7.4 7.4 0 108.2 8.2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4.6 12.4l4.6 4.6 10.2-10.4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M2.8 6.4h6.4l2 2.6h10v10.6H2.8Z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"><path d="M4 4.6h6.2a2 2 0 012 2v13H6a2 2 0 01-2-2Z M20 4.6h-6.2a2 2 0 00-2 2v13H18a2 2 0 002-2Z"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M8.4 3.4v4.2 M15.6 3.4v4.2 M6.2 7.6h11.6v3.2a5.8 5.8 0 01-11.6 0Z M12 16.6v4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 9.5L12 15l5.5-5.5"/></symbol>
+</defs></svg>
+
+<div class="wallpaper" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="tb-brand"><strong>WBOX</strong><span class="tb-tag">UI 设计稿 v3.4.0 · 待确认</span></div>
+  <nav class="tabs" aria-label="视图">
+    <button class="tab" data-view="v-icon" aria-pressed="false">品牌与图标</button>
+    <button class="tab" data-view="v-panel" aria-pressed="true">设置面板</button>
+    <button class="tab" data-view="v-menu" aria-pressed="false">齿轮菜单</button>
+    <button class="tab" data-view="v-setup" aria-pressed="false">安装向导</button>
+    <button class="tab" data-view="v-spec" aria-pressed="false">规范</button>
+  </nav>
+  <div class="seg seg-theme" role="group" aria-label="主题">
+    <button data-theme="light" aria-pressed="true">玻璃白</button>
+    <button data-theme="dark" aria-pressed="false">玻璃黑</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ================= 品牌与图标 ================= -->
+<section class="view" id="v-icon">
+  <p class="eyebrow">Brand &amp; Icon</p>
+  <h2 class="sec">WBOX：一个字母，两种颜色</h2>
+  <p class="lede">图标只做一件事——把大写 W 说清楚。圆角方块承载颜色，W 用负形亮出来；
+  只有 #000 与 #FFF，没有渐变、没有描边、没有阴影、没有第二个元素。</p>
+
+  <div class="changes">
+    <article class="change"><div class="n">01</div><h3>改名 WBOX</h3><p>窗口标题、面板、安装程序、关于信息统一换成 WBOX，旧名「僚机 Wingman」全部退役。</p></article>
+    <article class="change"><div class="n">02</div><h3>新图标</h3><p>大写 W 几何字标，块面 = 黑白两色，7 个尺寸重出 .ico。</p></article>
+    <article class="change"><div class="n">03</div><h3>头部收进标题栏</h3><p>红圈里那行小标题去掉；WBOX 字标兼作菜单入口、装插件的加号、窗口控制全部收到最上面一行，内容区不再有头部条。</p></article>
+    <article class="change"><div class="n">04</div><h3>液态玻璃</h3><p>窗口、浮层、气泡、安装器同一套半透明材质：背景模糊、边缘高光、柔和投影。</p></article>
+    <article class="change"><div class="n">05</div><h3>行尾并成一枚</h3><p>设置与删除合成一个入口：点滑块弹出该插件的设置浮层，卸载沉到浮层底部并标红，行上不再放危险动作。</p></article>
+  </div>
+
+  <div class="grid2" style="margin-bottom:22px">
+    <div class="lockup">
+      <svg class="icon" width="112" height="112"><use href="#wbox-icon"/></svg>
+      <div>
+        <div class="wordmark" style="font-size:40px">WBOX</div>
+        <div class="sub">Windows 游戏环境卫士</div>
+      </div>
+    </div>
+    <div class="cardish">
+      <h3>锁定规则</h3>
+      <ul>
+        <li>只用两种颜色：<span class="mono">#000000</span> / <span class="mono">#FFFFFF</span>，深色与浅色互为反相。</li>
+        <li>W 占画布 64 × 44，几何中心居中；左右留白 18%，上下 28%。</li>
+        <li>圆角固定 24/100（≈ iOS 连续圆角），不随尺寸变化比例。</li>
+        <li>不叠加文字、数字、渐变、描边、投影；≤ 24 px 时改用无容器 W。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-bottom:22px">
+    <div>
+      <div class="sizes skin-light" style="background:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)">
+        <div class="size-cell"><svg class="icon" width="96" height="96"><use href="#wbox-icon"/></svg><span class="lb">96 · 亮色</span></div>
+        <div class="size-cell"><svg class="icon" width="64" height="64"><use href="#wbox-icon"/></svg><span class="lb">64</span></div>
+        <div class="size-cell"><svg class="icon" width="48" height="48"><use href="#wbox-icon"/></svg><span class="lb">48</span></div>
+        <div class="size-cell"><svg class="icon" width="32" height="32"><use href="#wbox-icon"/></svg><span class="lb">32</span></div>
+        <div class="size-cell"><svg class="icon" width="24" height="24"><use href="#wbox-icon"/></svg><span class="lb">24</span></div>
+        <div class="size-cell"><svg class="icon" width="16" height="16"><use href="#wbox-icon"/></svg><span class="lb">16</span></div>
+      </div>
+      <p class="cap">黑底白 W：浅色任务栏、浅色桌面、安装包默认图标。</p>
+    </div>
+    <div>
+      <div class="sizes skin-dark" style="background:#0B0B0D;box-shadow:inset 0 0 0 1px rgba(255,255,255,.10)">
+        <div class="size-cell"><svg class="icon" width="96" height="96"><use href="#wbox-icon"/></svg><span class="lb">96 · 暗色</span></div>
+        <div class="size-cell"><svg class="icon" width="64" height="64"><use href="#wbox-icon"/></svg><span class="lb">64</span></div>
+        <div class="size-cell"><svg class="icon" width="48" height="48"><use href="#wbox-icon"/></svg><span class="lb">48</span></div>
+        <div class="size-cell"><svg class="icon" width="32" height="32"><use href="#wbox-icon"/></svg><span class="lb">32</span></div>
+        <div class="size-cell"><svg class="icon" width="24" height="24"><use href="#wbox-icon"/></svg><span class="lb">24</span></div>
+        <div class="size-cell"><svg class="icon" width="16" height="16"><use href="#wbox-icon"/></svg><span class="lb">16</span></div>
+      </div>
+      <p class="cap">白底黑 W：深色任务栏、深色桌面、深色主题。</p>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-bottom:22px">
+    <div class="cardish">
+      <h3>几何构造（100 × 100 画布）</h3>
+      <div class="grid-board" style="width:100%;aspect-ratio:1/1;max-width:320px">
+        <svg viewBox="0 0 100 100">
+          <rect x="0" y="0" width="100" height="100" rx="24" fill="none" stroke="var(--t4)" stroke-width=".6"/>
+          <path d="M18 28H82V72H18Z" stroke="var(--t4)" stroke-width=".5" stroke-dasharray="2 2" fill="none"/>
+          <path d="M50 6V20 M50 80V94 M6 50H20 M80 50H94" stroke="var(--t4)" stroke-width=".6" stroke-dasharray="2 2" fill="none"/>
+          <path d="M18 28H28L38 62L50 40L62 62L72 28H82L68 72H58L50 56L42 72H32Z" fill="var(--fg)"/>
+        </svg>
+      </div>
+      <p class="cap" style="margin-top:12px">无描边填充多边形：笔画等宽约 10，中点峰 40 高于底谷 72；不依赖线宽缩放，16 px 下边缘依然干净。</p>
+    </div>
+    <div class="cardish">
+      <h3>任务栏与 Alt+Tab</h3>
+      <div class="taskbar" style="margin-bottom:12px">
+        <div class="slot"><svg><use href="#i-monitor"/></svg></div>
+        <div class="slot on"><svg width="24" height="24" class="skin-dark"><use href="#wbox-icon"/></svg></div>
+        <div class="slot"><svg><use href="#i-folder"/></svg></div>
+        <div class="slot"><svg><use href="#i-log"/></svg></div>
+      </div>
+      <p class="cap">深色任务栏用白底图标，与系统图标同亮度；不发光、不加外框。</p>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:18px;padding:10px 12px;border-radius:14px;background:var(--inset);box-shadow:inset 0 0 0 1px var(--hair)">
+        <svg width="28" height="28"><use href="#w-glyph"/></svg>
+        <svg width="20" height="20"><use href="#w-glyph"/></svg>
+        <svg width="16" height="16"><use href="#w-glyph"/></svg>
+        <span class="cap" style="margin:0">无容器 W：面板内小尺寸、快捷键图标、托盘单色场景。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note"><b>为什么要换掉盾牌：</b>旧盾牌在 16 px 下内部箭头糊成一团，且和「ACE 防护」插件的盾牌图标撞形。
+  大写 W 在小尺寸只剩 5 笔，缩到 16 px 仍然认得出，也不和任何功能图标重复。</div>
+</section>
+
+<!-- ================= 设置面板 ================= -->
+<section class="view active" id="v-panel">
+  <p class="eyebrow">Settings Panel</p>
+  <h2 class="sec">一行标题栏装下全部入口</h2>
+  <p class="lede">红圈里那行小标题去掉，内容区的品牌条也一起取消：WBOX 名字、安装插件、设置三个入口并到最上面一行，
+  品牌名本身就是菜单入口（带下拉箭头，点开就是齿轮菜单），右上只剩一枚圆形加号负责装插件；每行尾巴也是单入口：点开就是该插件的设置浮层，卸载沉到浮层底部。</p>
+  <p class="cap" style="margin:-16px 0 26px">尺寸：窗口 640 × 332 · 标题栏 48 · 字标热区 34 高 · 加号 32 圆 · 行高 52 · 行尾按钮 30 · 设置浮层 296 宽 · 圆角 26 / 20 / 16 / 14 · 开关 46 × 28</p>
+
+  <!-- 玻璃白 -->
+  <div class="stage-light skin-light" style="margin-bottom:56px">
+  <div class="win-holder" id="stage-l">
+    <div class="app-window glass skin-light win-bleed">
+      <div class="titlebar">
+        <button class="tb-menu js-menu" aria-expanded="false" aria-label="WBOX 菜单" title="WBOX 菜单">
+          <span class="wordmark">WBOX</span>
+          <svg class="chev"><use href="#i-chev"/></svg>
+        </button>
+        <button class="tb-add" aria-label="安装插件" title="安装插件"><svg><use href="#i-plus"/></svg></button>
+        <div class="wctrls">
+          <button class="wbtn" aria-label="最小化"><svg><use href="#i-min"/></svg></button>
+          <button class="wbtn" aria-label="最大化"><svg><use href="#i-max"/></svg></button>
+          <button class="wbtn" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+      <div class="app-body">
+        <div class="list">
+          <div class="row">
+            <svg class="fi"><use href="#i-plane"/></svg><span class="nm">小飞机联动</span>
+            <span class="tip">游戏启动时自动打开 MSI Afterburner，退出游戏后一并关闭。改动立即生效。</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="小飞机联动"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="小飞机联动 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="小飞机联动 设置">
+              <div class="rp-head"><span class="rp-name">小飞机联动</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item rp-col"><span class="rp-lb">小飞机程序<span class="rp-sub">留空则自动查找已装好的 MSI Afterburner</span></span><span class="rp-path">留空 → 自动查找</span></div>
+              <div class="rp-item"><span class="rp-lb">一并管理帧率组件</span><button class="sw sm" role="switch" aria-checked="true" aria-label="一并管理帧率组件"></button></div>
+              <div class="rp-item"><span class="rp-lb">关不掉时强制结束</span><button class="sw sm" role="switch" aria-checked="false" aria-label="关不掉时强制结束"></button></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 4 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-pulse"/></svg><span class="nm">游戏加加联动</span>
+            <span class="tip">游戏启动时打开游戏加加并记录基线，退出后恢复原样。</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="false" aria-label="游戏加加联动"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="游戏加加联动 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="游戏加加联动 设置">
+              <div class="rp-head"><span class="rp-name">游戏加加联动</span><span class="rp-ver">v1.0.0</span></div>
+              <div class="rp-item rp-col"><span class="rp-lb">游戏加加程序<span class="rp-sub">留空则自动查找已装好的游戏加加</span></span><span class="rp-path">留空 → 自动查找</span></div>
+              <div class="rp-item"><span class="rp-lb">一并关闭子程序</span><button class="sw sm" role="switch" aria-checked="true" aria-label="一并关闭子程序"></button></div>
+              <div class="rp-item"><span class="rp-lb">关不掉时强制结束</span><button class="sw sm" role="switch" aria-checked="false" aria-label="关不掉时强制结束"></button></div>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-shield"/></svg><span class="nm">ACE 防护</span>
+            <span class="tip">游戏期间限制反作弊进程占用，退出后按四道闸门清理残留。</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="ACE 防护"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="ACE 防护 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="ACE 防护 设置">
+              <div class="rp-head"><span class="rp-name">ACE 防护</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item"><span class="rp-lb">游戏期间降低占用</span><button class="sw sm" role="switch" aria-checked="true" aria-label="游戏期间降低占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后清理残留</span><button class="sw sm" role="switch" aria-checked="false" aria-label="退出后清理残留"></button></div>
+              <div class="rp-item"><span class="rp-lb">开始前等待</span><span class="stepper"><button aria-label="减少">−</button><b>0 秒</b><button aria-label="增加">+</button></span></div>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-block"/></svg><span class="nm">弹窗拦截</span>
+            <span class="tip">游戏退出后关掉直播弹窗，并清理它的后台进程。</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="弹窗拦截"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="弹窗拦截 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="弹窗拦截 设置">
+              <div class="rp-head"><span class="rp-name">弹窗拦截</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item"><span class="rp-lb">游戏中提前关窗</span><button class="sw sm" role="switch" aria-checked="true" aria-label="游戏中提前关窗"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后清理后台</span><button class="sw sm" role="switch" aria-checked="false" aria-label="退出后清理后台"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后继续监视</span><span class="stepper"><button aria-label="减少">−</button><b>30 秒</b><button aria-label="增加">+</button></span></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 4 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-monitor"/></svg><span class="nm">桌面监控</span>
+            <span class="tip">在桌面常驻一个小窗，游戏运行期间自动暂停。</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="桌面监控"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="桌面监控 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="桌面监控 设置">
+              <div class="rp-head"><span class="rp-name">桌面监控</span><span class="rp-ver">v1.3.0</span></div>
+              <div class="rp-item"><span class="rp-lb">处理器占用</span><button class="sw sm" role="switch" aria-checked="true" aria-label="处理器占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">显卡占用</span><button class="sw sm" role="switch" aria-checked="false" aria-label="显卡占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">显存占用</span><button class="sw sm" role="switch" aria-checked="false" aria-label="显存占用"></button></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 11 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="menu-slot skin-light" data-menu-slot></div>
+    <p class="cap">玻璃白 · 点左侧 WBOX 展开菜单：箭头翻转，浮层从字标正下方拉出，左沿对齐字标热区</p>
+  </div>
+  </div>
+
+  <!-- 玻璃黑（放在深色环境里，玻璃才读得出「黑」） -->
+  <div class="stage-dark skin-dark" style="margin-bottom:22px">
+  <div class="win-holder">
+    <div class="app-window glass skin-dark win-bleed">
+      <div class="titlebar">
+        <button class="tb-menu js-menu" aria-expanded="false" aria-label="WBOX 菜单" title="WBOX 菜单">
+          <span class="wordmark">WBOX</span>
+          <svg class="chev"><use href="#i-chev"/></svg>
+        </button>
+        <button class="tb-add" aria-label="安装插件" title="安装插件"><svg><use href="#i-plus"/></svg></button>
+        <div class="wctrls">
+          <button class="wbtn" aria-label="最小化"><svg><use href="#i-min"/></svg></button>
+          <button class="wbtn" aria-label="最大化"><svg><use href="#i-max"/></svg></button>
+          <button class="wbtn" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+      <div class="app-body">
+        <div class="list">
+          <div class="row">
+            <svg class="fi"><use href="#i-plane"/></svg><span class="nm">小飞机联动</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="小飞机联动"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="小飞机联动 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="小飞机联动 设置">
+              <div class="rp-head"><span class="rp-name">小飞机联动</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item rp-col"><span class="rp-lb">小飞机程序<span class="rp-sub">留空则自动查找已装好的 MSI Afterburner</span></span><span class="rp-path">留空 → 自动查找</span></div>
+              <div class="rp-item"><span class="rp-lb">一并管理帧率组件</span><button class="sw sm" role="switch" aria-checked="true" aria-label="一并管理帧率组件"></button></div>
+              <div class="rp-item"><span class="rp-lb">关不掉时强制结束</span><button class="sw sm" role="switch" aria-checked="false" aria-label="关不掉时强制结束"></button></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 4 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-pulse"/></svg><span class="nm">游戏加加联动</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="false" aria-label="游戏加加联动"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="游戏加加联动 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="游戏加加联动 设置">
+              <div class="rp-head"><span class="rp-name">游戏加加联动</span><span class="rp-ver">v1.0.0</span></div>
+              <div class="rp-item rp-col"><span class="rp-lb">游戏加加程序<span class="rp-sub">留空则自动查找已装好的游戏加加</span></span><span class="rp-path">留空 → 自动查找</span></div>
+              <div class="rp-item"><span class="rp-lb">一并关闭子程序</span><button class="sw sm" role="switch" aria-checked="true" aria-label="一并关闭子程序"></button></div>
+              <div class="rp-item"><span class="rp-lb">关不掉时强制结束</span><button class="sw sm" role="switch" aria-checked="false" aria-label="关不掉时强制结束"></button></div>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-shield"/></svg><span class="nm">ACE 防护</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="ACE 防护"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="ACE 防护 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="ACE 防护 设置">
+              <div class="rp-head"><span class="rp-name">ACE 防护</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item"><span class="rp-lb">游戏期间降低占用</span><button class="sw sm" role="switch" aria-checked="true" aria-label="游戏期间降低占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后清理残留</span><button class="sw sm" role="switch" aria-checked="false" aria-label="退出后清理残留"></button></div>
+              <div class="rp-item"><span class="rp-lb">开始前等待</span><span class="stepper"><button aria-label="减少">−</button><b>0 秒</b><button aria-label="增加">+</button></span></div>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-block"/></svg><span class="nm">弹窗拦截</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="弹窗拦截"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="弹窗拦截 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="弹窗拦截 设置">
+              <div class="rp-head"><span class="rp-name">弹窗拦截</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item"><span class="rp-lb">游戏中提前关窗</span><button class="sw sm" role="switch" aria-checked="true" aria-label="游戏中提前关窗"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后清理后台</span><button class="sw sm" role="switch" aria-checked="false" aria-label="退出后清理后台"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后继续监视</span><span class="stepper"><button aria-label="减少">−</button><b>30 秒</b><button aria-label="增加">+</button></span></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 4 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          <div class="row">
+            <svg class="fi"><use href="#i-monitor"/></svg><span class="nm">桌面监控</span>
+            <div class="row-acts">
+              <button class="sw" role="switch" aria-checked="true" aria-label="桌面监控"></button>
+              <button class="ghost row-more js-more" aria-expanded="false" aria-label="桌面监控 设置"><svg><use href="#i-sliders"/></svg></button>
+            </div>
+            <div class="row-pop" role="dialog" aria-label="桌面监控 设置">
+              <div class="rp-head"><span class="rp-name">桌面监控</span><span class="rp-ver">v1.3.0</span></div>
+              <div class="rp-item"><span class="rp-lb">处理器占用</span><button class="sw sm" role="switch" aria-checked="true" aria-label="处理器占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">显卡占用</span><button class="sw sm" role="switch" aria-checked="false" aria-label="显卡占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">显存占用</span><button class="sw sm" role="switch" aria-checked="false" aria-label="显存占用"></button></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 11 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">玻璃黑 · 白底图标自动切黑底图标，开关反相（白轨黑钮）</p>
+  </div>
+  </div>
+
+  <div class="note"><b>行尾只留一枚图标：</b>开关管启停，不算设置；设置项和卸载都收进这枚滑块的浮层里。
+  浮层跟着行尾按钮的右边缘对齐、向下展开，一次只开一个。卸载沉到最底下、单独一条发丝线隔开、标红，
+  点它还要再过一次确认框——原来行上那枚垃圾桶只要点一下就没了，现在要两步。</div>
+
+  <div class="note"><b>只读态与零插件态：</b>沿用 v2.x 语义不变——目录不可写时开关整体置灰并禁用点击，底部出说明；
+  零插件时列表区换成一句引导 + 「安装插件」按钮。这两种状态本轮不改结构，改的只是材质。</div>
+
+  <div class="note"><b>这一行必须自绘：</b>原生标题栏没法往里塞按钮，所以整个窗口改成「客户区吞掉标题栏」
+  ——DWM 扩展边框（<span class="mono">DwmExtendFrameIntoClientArea</span>）或 tkinter 的
+  <span class="mono">overrideredirect</span> 二选一，拖动靠 <span class="mono">WM_NCHITTEST</span> 返回
+  <span class="mono">HTCAPTION</span>，贴边、最大化、高 DPI 缩放都要自己接回来。
+  不做的退路只有一条：标题文字清空保持原样，但品牌名和按钮就只能留在内容区（回到上一稿）。</div>
+</section>
+
+<!-- ================= 齿轮菜单 ================= -->
+<section class="view" id="v-menu">
+  <p class="eyebrow">Gear Menu</p>
+  <h2 class="sec">浮层也是玻璃，分组靠留白和发丝线</h2>
+  <p class="lede">菜单仍是浏览器式浮层，入口在左上：点 WBOX 字标展开，浮层从字标正下方拉出。12 个内核项 + 已安装插件分组，中间用 1 px 发丝线分隔；
+  勾选项右侧一枚对勾，开关项右侧一枚小胶囊，底部版本小字。</p>
+
+  <div class="stage">
+    <div class="win-holder" style="width:1000px;max-width:100%">
+      <div class="app-window glass win-bleed" style="width:640px">
+        <div class="titlebar">
+          <button class="tb-menu js-menu" aria-expanded="true" aria-label="WBOX 菜单">
+            <span class="wordmark">WBOX</span>
+            <svg class="chev"><use href="#i-chev"/></svg>
+          </button>
+          <button class="tb-add" aria-label="安装插件"><svg><use href="#i-plus"/></svg></button>
+          <div class="wctrls">
+            <button class="wbtn" aria-label="最小化"><svg><use href="#i-min"/></svg></button>
+            <button class="wbtn" aria-label="最大化"><svg><use href="#i-max"/></svg></button>
+            <button class="wbtn" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+          </div>
+        </div>
+        <div class="app-body">
+          <div class="list">
+            <div class="row"><svg class="fi"><use href="#i-plane"/></svg><span class="nm">小飞机联动</span>
+              <div class="row-acts"><button class="sw" role="switch" aria-checked="true"></button><button class="ghost row-more js-more" aria-expanded="false" aria-label="小飞机联动 设置"><svg><use href="#i-sliders"/></svg></button></div>
+            <div class="row-pop" role="dialog" aria-label="小飞机联动 设置">
+              <div class="rp-head"><span class="rp-name">小飞机联动</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item rp-col"><span class="rp-lb">小飞机程序<span class="rp-sub">留空则自动查找已装好的 MSI Afterburner</span></span><span class="rp-path">留空 → 自动查找</span></div>
+              <div class="rp-item"><span class="rp-lb">一并管理帧率组件</span><button class="sw sm" role="switch" aria-checked="true" aria-label="一并管理帧率组件"></button></div>
+              <div class="rp-item"><span class="rp-lb">关不掉时强制结束</span><button class="sw sm" role="switch" aria-checked="false" aria-label="关不掉时强制结束"></button></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 4 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+            <div class="row"><svg class="fi"><use href="#i-pulse"/></svg><span class="nm">游戏加加联动</span>
+              <div class="row-acts"><button class="sw" role="switch" aria-checked="false"></button><button class="ghost row-more js-more" aria-expanded="false" aria-label="游戏加加联动 设置"><svg><use href="#i-sliders"/></svg></button></div>
+            <div class="row-pop" role="dialog" aria-label="游戏加加联动 设置">
+              <div class="rp-head"><span class="rp-name">游戏加加联动</span><span class="rp-ver">v1.0.0</span></div>
+              <div class="rp-item rp-col"><span class="rp-lb">游戏加加程序<span class="rp-sub">留空则自动查找已装好的游戏加加</span></span><span class="rp-path">留空 → 自动查找</span></div>
+              <div class="rp-item"><span class="rp-lb">一并关闭子程序</span><button class="sw sm" role="switch" aria-checked="true" aria-label="一并关闭子程序"></button></div>
+              <div class="rp-item"><span class="rp-lb">关不掉时强制结束</span><button class="sw sm" role="switch" aria-checked="false" aria-label="关不掉时强制结束"></button></div>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+            <div class="row"><svg class="fi"><use href="#i-shield"/></svg><span class="nm">ACE 防护</span>
+              <div class="row-acts"><button class="sw" role="switch" aria-checked="true"></button><button class="ghost row-more js-more" aria-expanded="false" aria-label="ACE 防护 设置"><svg><use href="#i-sliders"/></svg></button></div>
+            <div class="row-pop" role="dialog" aria-label="ACE 防护 设置">
+              <div class="rp-head"><span class="rp-name">ACE 防护</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item"><span class="rp-lb">游戏期间降低占用</span><button class="sw sm" role="switch" aria-checked="true" aria-label="游戏期间降低占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后清理残留</span><button class="sw sm" role="switch" aria-checked="false" aria-label="退出后清理残留"></button></div>
+              <div class="rp-item"><span class="rp-lb">开始前等待</span><span class="stepper"><button aria-label="减少">−</button><b>0 秒</b><button aria-label="增加">+</button></span></div>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+            <div class="row"><svg class="fi"><use href="#i-block"/></svg><span class="nm">弹窗拦截</span>
+              <div class="row-acts"><button class="sw" role="switch" aria-checked="true"></button><button class="ghost row-more js-more" aria-expanded="false" aria-label="弹窗拦截 设置"><svg><use href="#i-sliders"/></svg></button></div>
+            <div class="row-pop" role="dialog" aria-label="弹窗拦截 设置">
+              <div class="rp-head"><span class="rp-name">弹窗拦截</span><span class="rp-ver">v2.0.0</span></div>
+              <div class="rp-item"><span class="rp-lb">游戏中提前关窗</span><button class="sw sm" role="switch" aria-checked="true" aria-label="游戏中提前关窗"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后清理后台</span><button class="sw sm" role="switch" aria-checked="false" aria-label="退出后清理后台"></button></div>
+              <div class="rp-item"><span class="rp-lb">退出后继续监视</span><span class="stepper"><button aria-label="减少">−</button><b>30 秒</b><button aria-label="增加">+</button></span></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 4 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+            <div class="row"><svg class="fi"><use href="#i-monitor"/></svg><span class="nm">桌面监控</span>
+              <div class="row-acts"><button class="sw" role="switch" aria-checked="true"></button><button class="ghost row-more js-more" aria-expanded="false" aria-label="桌面监控 设置"><svg><use href="#i-sliders"/></svg></button></div>
+            <div class="row-pop" role="dialog" aria-label="桌面监控 设置">
+              <div class="rp-head"><span class="rp-name">桌面监控</span><span class="rp-ver">v1.3.0</span></div>
+              <div class="rp-item"><span class="rp-lb">处理器占用</span><button class="sw sm" role="switch" aria-checked="true" aria-label="处理器占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">显卡占用</span><button class="sw sm" role="switch" aria-checked="false" aria-label="显卡占用"></button></div>
+              <div class="rp-item"><span class="rp-lb">显存占用</span><button class="sw sm" role="switch" aria-checked="false" aria-label="显存占用"></button></div>
+              <button class="rp-more"><svg><use href="#i-sliders"/></svg>全部 11 项设置…</button>
+              <div class="rp-sep"></div>
+              <button class="rp-del"><svg><use href="#i-trash"/></svg>卸载此插件</button>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+      <div class="menu-slot is-open menu-full" data-menu-slot style="top:52px;right:auto;left:652px"></div>
+    </div>
+  </div>
+  <p class="cap">菜单宽 300，圆角 22；这里完整展开便于逐项评审，实际运行高度上限 560，超出走滚轮（底边渐隐）。</p>
+</section>
+
+<!-- ================= 安装向导 ================= -->
+<section class="view" id="v-setup">
+  <p class="eyebrow">Setup</p>
+  <h2 class="sec">安装器穿同一件衣服</h2>
+  <p class="lede">向导沿用 v2 的结构（选目录 → 两个开关 → 安装 → 完成），材质换成液态玻璃；
+  主按钮改成整宽胶囊，危险动作仍然先确认。</p>
+
+  <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+    <div class="setup glass">
+      <div class="titlebar"><span class="t">WBOX Setup</span>
+        <div class="wctrls"><button class="wbtn" aria-label="关闭"><svg><use href="#i-close"/></svg></button></div>
+      </div>
+      <div class="setup-head">
+        <div>
+          <h3 class="setup-title">安装 WBOX</h3>
+          <p class="setup-sub">按需启用功能，随时可以卸载。装完不需要重启。</p>
+        </div>
+      </div>
+      <div class="setup-body">
+        <div class="field">
+          <span class="lb">安装位置</span>
+          <div class="input"><svg class="ico"><use href="#i-folder"/></svg><span class="v">D:\Tools\WBOX</span><button class="browse">更改</button></div>
+        </div>
+        <div class="options">
+          <div class="opt"><span class="txt">开机自动运行</span><span class="sub">登录后静默启动守护</span><button class="sw" role="switch" aria-checked="true" aria-label="开机自动运行"></button></div>
+          <div class="opt"><span class="txt">装完立即启动</span><span class="sub">打开面板并开始守护</span><button class="sw" role="switch" aria-checked="false" aria-label="装完立即启动"></button></div>
+        </div>
+        <div class="setup-foot">
+          <button class="btn-text">取消</button>
+          <button class="btn-primary">安装</button>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div class="setup glass" style="width:420px">
+        <div class="setup-body" style="padding:22px 22px 20px">
+          <div class="setup-title" style="font-size:16px;margin:0 0 14px">正在安装</div>
+          <div class="progress"><i></i></div>
+          <p class="setup-sub" style="margin:0 0 4px">正在复制程序文件 · 62%</p>
+          <p class="cap" style="margin:0">D:\Tools\WBOX\ · 正在写入 18 个文件</p>
+        </div>
+      </div>
+      <div class="done-card glass" style="width:420px">
+        <div class="done-ic"><svg><use href="#i-check"/></svg></div>
+        <h3>安装完成</h3>
+        <p>已装到 D:\Tools\WBOX。现在可以打开设置，按需启用功能。</p>
+        <button class="btn-primary">打开设置</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="note"><b>进度条与完成态也走玻璃：</b>进度条轨道用 8% 白、进度填充用纯前景色，
+  在黑白两套主题下都不需要新颜色；完成态的对勾圆只用前景色填充。</div>
+</section>
+
+<!-- ================= 规范 ================= -->
+<section class="view" id="v-spec">
+  <p class="eyebrow">Specification</p>
+  <h2 class="sec">材质、圆角、字阶与落地边界</h2>
+  <p class="lede">这一页是给实现看的。数字就是 code 里的数字，不再另起一套。</p>
+
+  <div class="grid2" style="margin-bottom:22px">
+    <div class="cardish" style="padding:8px 12px 12px">
+      <table class="spec">
+        <tr><th>层级</th><th>用途</th><th>圆角</th><th>填充 / 模糊</th></tr>
+        <tr><td>窗口</td><td class="dim">主面板</td><td class="mono">26</td><td class="mono">白 .54 / 30px + 170%</td></tr>
+        <tr><td>分组卡</td><td class="dim">列表容器</td><td class="mono">20</td><td class="mono">白 .42 / 继承窗口</td></tr>
+        <tr><td>浮层</td><td class="dim">齿轮菜单</td><td class="mono">22</td><td class="mono">白 .72 / 34px + 190%</td></tr>
+        <tr><td>浮层</td><td class="dim">行设置</td><td class="mono">16</td><td class="mono">白 .97 / 30px + 170%</td></tr>
+        <tr><td>气泡</td><td class="dim">简介提示</td><td class="mono">13</td><td class="mono">白 .54 / 24px + 180%</td></tr>
+        <tr><td>控件</td><td class="dim">开关 / 按钮</td><td class="mono">全胶囊 / 12</td><td class="mono">— / —</td></tr>
+      </table>
+    </div>
+    <div class="cardish" style="padding:8px 12px 12px">
+      <table class="spec">
+        <tr><th>元素</th><th>尺寸</th><th>说明</th></tr>
+        <tr><td>窗口</td><td class="mono">640 × 332</td><td class="dim">同宽；比上一稿矮 56</td></tr>
+        <tr><td>标题栏</td><td class="mono">48</td><td class="dim">字标菜单 + 圆形加号 + 窗口控制，一行装完</td></tr>
+        <tr><td>功能行</td><td class="mono">52</td><td class="dim">图标 22 · 名称 15/500</td></tr>
+        <tr><td>开关</td><td class="mono">46 × 28</td><td class="dim">钮 24 · 行程 18</td></tr>
+        <tr><td>字标菜单</td><td class="mono">34 高</td><td class="dim">22/700 字标 + 12 箭头 · 热区圆角 11 · 左出血 8 保持 28 视觉边距</td></tr>
+        <tr><td>加号按钮</td><td class="mono">32 圆</td><td class="dim">图标 17 · 底 fill，悬停升一档 · 距窗口控制 6</td></tr>
+        <tr><td>行尾按钮</td><td class="mono">30</td><td class="dim">图标 17 · 圆角 9，该插件唯一入口</td></tr>
+        <tr><td>行设置浮层</td><td class="mono">296 宽</td><td class="dim">圆角 16 · 内边距 7 · 项高 32 · 小开关 38 × 22</td></tr>
+        <tr><td>窗口控制钮</td><td class="mono">34 × 26</td><td class="dim">图标 11 · 与动作组隔一条发丝线</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="cardish" style="padding:8px 12px 14px; margin-bottom:22px">
+    <table class="spec">
+      <tr><th>位置</th><th>字号 / 字重</th><th>行高</th><th>为什么是这个数</th></tr>
+      <tr><td>品牌字标</td><td class="mono">22 / 700</td><td class="mono">1.0</td><td class="dim">16 → 22：标题栏是唯一放品牌的地方，字号接近窗口标题，压得住 15 的行名；字距 −0.035em</td></tr>
+      <tr><td>功能行名称</td><td class="mono">15 / 500</td><td class="mono">1.4</td><td class="dim">14.5 → 15：中文笔画在玻璃上偏细，多半号更实</td></tr>
+      <tr><td>菜单项 / 浮层设置项</td><td class="mono">13 / 400</td><td class="mono">1.4</td><td class="dim">与行名拉开两级，菜单与行设置都是次级动作</td></tr>
+      <tr><td>浮层层名 / 版本</td><td class="mono">13 / 600 · 10.5</td><td class="mono">1.2</td><td class="dim">浮层里没有大标题，靠字重区分层级</td></tr>
+      <tr><td>菜单提示 / 气泡</td><td class="mono">12 / 400</td><td class="mono">1.6</td><td class="dim">11.5 → 12：小字在 125% 缩放下不糊</td></tr>
+      <tr><td>分组标题 / 版本行</td><td class="mono">11 / 500</td><td class="mono">1.3</td><td class="dim">10.5 → 11；全大写 + 0.10em 字距</td></tr>
+      <tr><td>说明小字</td><td class="mono">11.5 / 400</td><td class="mono">1.6</td><td class="dim">只在设计稿里用，不进程序</td></tr>
+    </table>
+  </div>
+
+  <div class="grid2" style="margin-bottom:22px">
+    <div class="cardish">
+      <h3>字阶与动效</h3>
+      <ul>
+        <li>全部取整数 px（tkinter 用负数字号直接对齐像素，不做 pt 换算），字重只用 400 / 500 / 700 三档。</li>
+        <li>悬停 160 ms、按下 120 ms、浮层 200 ms；曲线 <span class="mono">cubic-bezier(.22,.61,.36,1)</span>，开关钮用更慢的 240 ms 回弹。</li>
+        <li>只用位移 0→1 px 与透明度，不做缩放跳动；系统开启「减少动态效果」时全部改成 0 ms 直切。</li>
+      </ul>
+    </div>
+    <div class="cardish">
+      <h3>无障碍</h3>
+      <ul>
+        <li>文字落在玻璃上时，等效底色亮度必须 ≥ 0.55（浅色）/ ≤ 0.18（深色），保证 ≥ 4.5:1；不达标就把该层遮罩加到 .72。</li>
+        <li>开关是 <span class="mono">role="switch"</span> + <span class="mono">aria-checked</span>，空格/回车可切；焦点环 2 px 前景色、偏移 3 px。</li>
+        <li>桌面命中区最小 30 × 30，图标按钮的有效热区扩到 44（透明扩展），不改变视觉尺寸。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="cardish">
+    <h3>落地边界（tkinter 真实能力）</h3>
+    <ul>
+      <li><b>整窗模糊</b>可用 DWM：<span class="mono">SetWindowCompositionAttribute(ACCENT_ENABLE_ACRYLICBLURBEHIND)</span>，Win10 19045 支持；Win11 可换 Mica/Acrylic 新接口。</li>
+      <li><b>窗内分层模糊</b>做不到：列表卡、气泡、菜单的「折射」只能用「采样壁纸 → 高斯模糊 → 作为窗口背景图」近似，静止时更新一次。</li>
+      <li><b>圆角</b>Win10 无 API：用 <span class="mono">SetWindowRgn</span> 裁圆角，配合 DWM 阴影；裁剪区变化时要重建 region。</li>
+      <li><b>拖动性能</b>：Win10 亚克力拖动会掉帧，方案是拖动时切纯色、静止 120 ms 后恢复玻璃。</li>
+      <li><b>行设置浮层</b>：真实实现是独立 <span class="mono">Toplevel</span>（<span class="mono">overrideredirect</span> + 跟随主窗口位置），可以溢出主窗口边界，所以不必在主窗口里做裁剪；失焦或点外部即关，一次只开一个。</li>
+      <li><b>卸载两步</b>：行上不再放删除按钮，卸载沉到浮层底部并标红，点它还要过一次确认框——危险动作从「行上一枚图标」变成「两个动作」，误删概率下来。</li>
+      <li><b>降级</b>：读不到合成或用户关闭透明效果时，回退当前 v2.5.0 的不透明双主题，功能与布局完全不变。</li>
+      <li><b>图标落地</b>：改 <span class="mono">design/generate_icons.py</span> 的 W 几何 → 重出 7 个尺寸 → 主程序与安装器两份 .ico 同步 → 安装完 <span class="mono">SHChangeNotify</span> 刷缓存。</li>
+    </ul>
+  </div>
+
+  <div class="note"><b>改名影响面：</b>仓库名、安装目录、计划任务名、注册表卸载项、日志文件名都在代码里写死为 Wingman。
+  本轮只做设计稿；落地时需要一次「改名迁移」清单（含老用户升级路径），单独排一步，不和视觉改动混在一起。</div>
+
+  <div class="note"><b>这套视觉已经是「液态玻璃」皮肤：</b>外观层拆成皮肤插件后，本稿原样成为内置皮肤
+  <span class="mono">liquid-glass</span>，另有一套不吃性能的 <span class="mono">plain</span>。
+  皮肤包结构、25 个 token、性能分级见 <span class="mono">design/wbox-skins.html</span> 与
+  <span class="mono">docs/SKIN-SPEC.md</span>。</div>
+</section>
+
+</main>
+
+<footer>
+  <span>WBOX · 液态玻璃设计稿 v3.4.0 · 2026-11-17</span>
+  <span>静态预览，未改程序代码；玻璃效果依赖浏览器 backdrop-filter</span>
+</footer>
+
+<!-- 菜单模板：两处（面板内 / 菜单页）共用同一份 -->
+<template id="tpl-menu">
+  <div class="menu">
+    <div class="menu-scroll">
+      <button class="m-item"><svg class="mi"><use href="#i-dot"/></svg>守护状态<span class="m-hint">运行中</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-play"/></svg>启动守护</button>
+      <button class="m-item"><svg class="mi"><use href="#i-stop"/></svg>停止守护</button>
+      <button class="m-item"><svg class="mi"><use href="#i-power"/></svg>开机自动启动守护<span class="m-sw"></span></button>
+      <div class="m-sep"></div>
+      <button class="m-item"><svg class="mi"><use href="#i-rescan"/></svg>重新扫描游戏库</button>
+      <button class="m-item"><svg class="mi"><use href="#i-log"/></svg>查看运行日志</button>
+      <button class="m-item"><svg class="mi"><use href="#i-cfg"/></svg>编辑配置文件</button>
+      <div class="m-sep"></div>
+      <button class="m-item"><svg class="mi"><use href="#i-sun"/></svg>外观与皮肤…<span class="m-hint">液态玻璃</span></button>
+      <div class="m-sep"></div>
+      <button class="m-item"><svg class="mi"><use href="#i-check"/></svg>保存设置</button>
+      <button class="m-item"><svg class="mi"><use href="#i-close"/></svg>关闭菜单<span class="m-hint">Esc</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-book"/></svg>插件开发指南</button>
+      <div class="m-sep"></div>
+      <div class="m-head">已安装插件</div>
+      <button class="m-item"><svg class="mi"><use href="#i-plane"/></svg>小飞机联动<span class="m-hint">正常</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-pulse"/></svg>游戏加加联动<span class="m-hint">已关闭</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-shield"/></svg>ACE 防护<span class="m-hint">正常</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-block"/></svg>弹窗拦截<span class="m-hint">正常</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-monitor"/></svg>桌面监控<span class="m-hint">正常</span></button>
+      <button class="m-item"><svg class="mi"><use href="#i-folder"/></svg>打开插件目录</button>
+    </div>
+    <div class="m-foot"><span>WBOX 3.0.0</span><span>设置即时生效</span></div>
+  </div>
+</template>
+
+<script>
+(function(){
+  var body = document.body;
+
+  // 主题
+  var themeBtns = document.querySelectorAll('.seg-theme button');
+  themeBtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      body.setAttribute('data-theme', b.dataset.theme);
+      themeBtns.forEach(function(x){ x.setAttribute('aria-pressed', String(x === b)); });
+    });
+  });
+
+  // 视图
+  var tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      tabs.forEach(function(x){ x.setAttribute('aria-pressed', String(x === t)); });
+      document.querySelectorAll('.view').forEach(function(v){
+        v.classList.toggle('active', v.id === t.dataset.view);
+      });
+      window.scrollTo({top:0, behavior:'smooth'});
+    });
+  });
+
+  // 深链：?view=v-icon 直接打开某个视图（便于截图与单页分享）
+  var params = new URLSearchParams(location.search);
+  if(params.get('static')) document.body.classList.add('static');
+  var qv = params.get('view');
+  if(qv){
+    var target = document.querySelector('.tab[data-view="' + qv + '"]');
+    if(target) target.click();
+  }
+  var qt = params.get('theme');
+  if(qt === 'dark' || qt === 'light'){
+    var tb = document.querySelector('.seg-theme button[data-theme="' + qt + '"]');
+    if(tb) tb.click();
+  }
+  if(params.get('row')){
+    var r0 = document.querySelector('#v-panel .row');
+    var b0 = r0 && r0.querySelector('.js-more');
+    if(r0){ r0.classList.add('is-open'); if(b0) b0.setAttribute('aria-expanded','true'); }
+  }
+  if(params.get('menu')){
+    var slot = document.querySelector('.menu-slot');
+    if(slot){
+      slot.classList.add('is-open');
+      var mb = slot.closest('.win-holder') && slot.closest('.win-holder').querySelector('.js-menu');
+      if(mb) mb.setAttribute('aria-expanded','true');
+    }
+  }
+
+  // 行设置浮层：点行尾滑块展开，一次只开一个，点外部收起
+  document.addEventListener('click', function(e){
+    var more = e.target.closest('.js-more');
+    if(more){
+      var row = more.closest('.row');
+      var wasOpen = row.classList.contains('is-open');
+      document.querySelectorAll('.row.is-open').forEach(function(r){
+        r.classList.remove('is-open');
+        var b = r.querySelector('.js-more');
+        if(b) b.setAttribute('aria-expanded','false');
+      });
+      if(!wasOpen){
+        row.classList.add('is-open');
+        more.setAttribute('aria-expanded','true');
+      }
+      e.stopPropagation();
+      return;
+    }
+    if(!e.target.closest('.row-pop')){
+      document.querySelectorAll('.row.is-open').forEach(function(r){
+        r.classList.remove('is-open');
+        var b = r.querySelector('.js-more');
+        if(b) b.setAttribute('aria-expanded','false');
+      });
+    }
+  });
+
+  // 开关
+  document.addEventListener('click', function(e){
+    var sw = e.target.closest('.sw');
+    if(!sw) return;
+    var on = sw.getAttribute('aria-checked') === 'true';
+    sw.setAttribute('aria-checked', String(!on));
+  });
+
+  // 菜单：模板注入 + 齿轮开合
+  var tpl = document.getElementById('tpl-menu');
+  document.querySelectorAll('[data-menu-slot]').forEach(function(slot){
+    slot.appendChild(tpl.content.cloneNode(true));
+  });
+  document.querySelectorAll('.js-menu').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var holder = btn.closest('.win-holder');
+      var slot = holder && holder.querySelector('[data-menu-slot]');
+      if(!slot) return;
+      slot.classList.toggle('is-open');
+      btn.setAttribute('aria-expanded', slot.classList.contains('is-open') ? 'true' : 'false');
+    });
+  });
+
+  // 点外部收起面板内菜单（菜单页的常驻演示不参与收合）
+  document.addEventListener('mousedown', function(e){
+    document.querySelectorAll('.menu-slot.is-open:not(.menu-full)').forEach(function(slot){
+      if(!slot.contains(e.target) && !e.target.closest('.js-menu')){
+        slot.classList.remove('is-open');
+        var mb = slot.closest('.win-holder') && slot.closest('.win-holder').querySelector('.js-menu');
+        if(mb) mb.setAttribute('aria-expanded','false');
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
