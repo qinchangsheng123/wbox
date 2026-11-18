@@ -182,8 +182,8 @@ try:
     check('打开日志失败' in logtext and 'OSError' in logtext,
           '原始异常记进日志（详情可查看日志）')
 
-    # ---------------- [5] 卸载插件：标题带对象 / 内置追加 / 动词 ----------------
-    print('[5] 卸载确认：标题带对象、内置追加灰字、按钮「卸载 / 取消」')
+    # ---------------- [5] 卸载插件：标题带对象 / 无比内置提示 / 动词 -----------
+    print('[5] 卸载确认：标题带对象、不再有"内置"提示、按钮「卸载 / 取消」')
     app.probe = False
     calls = []
     sg.plugin_package.remove_plugin = \
@@ -200,8 +200,10 @@ try:
     app.on_delete_plugin(ent2)
     check(any(t == '卸载「ACE 防护」？' for t in cap),
           '标题带具体对象防误删：%r' % cap)
-    check(any('内置插件' in t and '重新安装程序' in t for t in cap),
-          '内置插件追加风险说明')
+    # v2.11.3：本体不再附带插件，连官方 id 卸载时也不该说"内置插件、要重装程序"
+    # ——插件库随时能重装，那句话现在是假的。
+    check(not any('内置插件' in t for t in cap),
+          '卸载官方 id 不再谎称"内置插件"：%r' % cap)
     check(any('先备份' in t for t in cap), '正文讲可逆（先备份）')
     schedule_click('卸载', 0.08)
     schedule_click('好', 0.35)
