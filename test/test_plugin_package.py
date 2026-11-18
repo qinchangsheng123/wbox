@@ -106,8 +106,11 @@ def main():
             for pid in ('afterburner', 'ace', 'popup', 'gamepp'):
                 zp = plugin_package.pack_plugin(os.path.join(src_root, pid), out_dir)
                 info = plugin_package.inspect_zip(zp)
-                check(info['id'] == pid and info['members'] and info['builtin'],
-                      '%s-v.zip 通过校验（%d 文件 / %d B）'
+                # v2.11.3：本体不带插件，连官方包也不再算"内置"（builtin=False），
+                # 但 publisher 与 id 命中时信任等级仍是 official。
+                check(info['id'] == pid and info['members'] and not info['builtin']
+                      and info['trust'] == 'official',
+                      '%s-v.zip 通过校验（%d 文件 / %d B，非内置 / 官方）'
                       % (pid, len(info['members']), info['total_bytes']))
             check(os.path.isfile(zp + '.sha256'), '打包同时产出 .sha256 侧车')
 

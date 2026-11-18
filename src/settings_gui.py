@@ -4438,13 +4438,12 @@ class App(object):
         if self.plugins_ro:
             self._plugins_readonly_notice()
             return
-        extra = None
-        if entry.id in plugin_package.BUILTIN_IDS:
-            extra = '这是随程序附带的内置插件，卸载后需重新安装程序才能恢复。'
+        # v2.11.3：本体不再附带插件，卸载后想再用去插件库重装即可，
+        # 不再有"内置插件卸载后要重装程序"这条提示。
         if not self.confirm('卸载「%s」？' % entry.name,
                             '卸载后这个插件会停止工作，文件会先备份而不是直接删除，'
                             '之后可以找回。要卸载吗？',
-                            '卸载', extra=extra):
+                            '卸载'):
             return
         while True:
             try:

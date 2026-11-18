@@ -92,10 +92,13 @@ MAX_MEMBER_BYTES = 1024 * 1024
 MAX_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 8 * 1024 * 1024
 
-BUILTIN_IDS = frozenset(('afterburner', 'ace', 'popup', 'gamepp'))
-# 随安装包分发的全部插件 id（desktop_hud 不在内核硬编码名单里，但同源发布）。
-# 只用于安装框的措辞，不参与任何加载/删除判定。
-OFFICIAL_IDS = BUILTIN_IDS | frozenset(('desktop_hud',))
+# v2.11.3 起本体**不附带任何插件**，这个集合恒为空；保留名字只为兼容旧调用点
+# （`inspect_zip` 的 builtin 键、卸载文案的分支），判定一律按用户自装处理。
+BUILTIN_IDS = frozenset()
+# 官方维护并同源发布的插件 id（与 wbox-plugins 仓库一致）。
+# 只用于安装框与信任等级的措辞，不参与任何加载/删除判定——
+# 是不是"官方"还要看 publisher，缺 publisher 一律按来源不明。
+OFFICIAL_IDS = frozenset(('afterburner', 'ace', 'popup', 'gamepp', 'desktop_hud'))
 
 
 class PackageError(Exception):

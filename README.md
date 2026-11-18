@@ -104,13 +104,14 @@ Python / Tcl 运行时；`payload.zip` 不再重复携带这 9 个二进制与 `
 **主程序不带插件。** 装好 WBOX 是一个空面板，功能插件从官方插件仓库单独下载：
 
 > **插件仓库：<https://github.com/qinchangsheng123/wbox-plugins>**
+> **下载页：<https://github.com/qinchangsheng123/wbox-plugins/releases>**（每个插件一个 Release，带 `.sha256`）
 > 面板齿轮菜单里的「浏览插件库」直接打开它，空面板上也有「插件库」按钮。
 
 面板与守护的功能清单都来自 `plugins\<id>\plugin.json`，不再写死在代码里：
 
-- **加插件**：从插件仓库下载 `dist\<id>-v<版本>.zip`，点标题栏字标旁边的「＋」安装；
-  校验通过后自动生效，守护 2 秒内热重载（游戏会话中会等本局结束，不打断 ACE 限速 /
-  弹窗监视）；
+- **加插件**：从插件仓库 Releases 下载 `<id>-v<版本>.zip`（不用解压），点标题栏字标旁边的
+  「＋」选中它；校验通过后自动生效，守护 2 秒内热重载（游戏会话中会等本局结束，
+  不打断 ACE 限速 / 弹窗监视）；
 - **删插件**：点行尾滑块打开设置浮层，底部「卸载此插件」，确认后目录移进备份区
   （不硬删），面板那一行随之消失；
 - 菜单的「已安装插件」分组显示版本与状态（正常 / 运行异常 N 次 / 加载失败 /
@@ -150,13 +151,19 @@ python tools\pack.py --check <file.zip>  # 只校验不安装
 五个官方插件都在 [wbox-plugins](https://github.com/qinchangsheng123/wbox-plugins)
 仓库里单独演进、单独发版；主程序只负责加载。
 
-| id | 功能 | 说明 |
-|---|---|---|
-| `afterburner` | 小飞机关联启动 | 游戏启动拉起 MSI Afterburner / RTSS，退出后只关本局新起的 |
-| `gamepp` | 游戏加加联动 | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表） |
-| `ace` | ACE 防护 | 游戏期间限速 + 退出后按四道闸门清残留 |
-| `popup` | 弹窗关闭 | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树 |
-| `desktop_hud` | 桌面监控悬浮窗 | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
+| id | 功能 | 版本 | 下载 | 说明 |
+|---|---|---|---|---|
+| `afterburner` | 小飞机关联启动 | 2.1.1 | [zip][r-ab] | 游戏启动拉起 MSI Afterburner / RTSS，退出后只关本局新起的 |
+| `gamepp` | 游戏加加联动 | 1.1.1 | [zip][r-gp] | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表） |
+| `ace` | ACE 防护 | 2.1.1 | [zip][r-ace] | 游戏期间限速 + 退出后按四道闸门清残留 |
+| `popup` | 弹窗关闭 | 2.0.1 | [zip][r-pop] | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树 |
+| `desktop_hud` | 桌面监控悬浮窗 | 1.5.1 | [zip][r-hud] | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
+
+[r-ab]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/afterburner-v2.1.1
+[r-gp]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/gamepp-v1.1.1
+[r-ace]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/ace-v2.1.1
+[r-pop]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/popup-v2.0.1
+[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.5.1
 
 ## 测试
 
