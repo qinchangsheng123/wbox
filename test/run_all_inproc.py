@@ -11,10 +11,11 @@
   `test_quiet_gate.py` 第 [8] 组抓到的"原始函数"已经是替身，把"取不到创建时间"
   误判成 CLEAN。按文件独立进程跑是看不见这个问题的。
 
-唯一例外的清理：`settings_gui` 在 import 时就把 `ABG_BASE` 读进模块常量 BASE，
-两个 GUI 测试各有各的临时目录，所以每跑完一个文件就把它从 sys.modules 里摘掉，
-让下一个文件重新 import。其余模块（含 ace_native / guard_core）**一律不清理**，
-这样才留得住"谁偷偷改了别人的全局"这类问题。
+唯一例外的清理：`settings_gui` 及它拆分出来的五个模块（v2.13.0 审查项 ⑨）都在
+import 时就把 `ABG_BASE` 读进模块常量（BASE / CFG / PLUGINS_DIR…），两个 GUI
+测试各有各的临时目录，所以每跑完一个文件就把它们从 sys.modules 里摘掉，让下一个
+文件按自己的 ABG_BASE 重新 import。其余模块（含 ace_native / guard_core）**一律
+不清理**，这样才留得住"谁偷偷改了别人的全局"这类问题。
 
 用法：C:\\Python38\\python.exe test\\run_all_inproc.py
 退出码：0 = 全部通过；1 = 有文件失败。
@@ -28,8 +29,11 @@ import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# 只摘这一个：它在 import 时固化了 ABG_BASE（见文件头）
-RESET_MODULES = ('settings_gui',)
+# 只摘这一组：它们都在 import 时固化了 ABG_BASE（见文件头）。顺序无关，
+# 但必须整组一起摘——留着 panel_env 而摘掉 settings_gui，下一个文件会拿到
+# 上一个测试的临时目录，症状是"单跑全绿、一起跑全红"（v2.13.0 踩过）。
+RESET_MODULES = ('settings_gui', 'panel_env', 'win_env', 'panel_state',
+                 'ui_gfx', 'ui_widgets')
 
 
 def pick_files():

@@ -270,6 +270,26 @@ class PluginContext(object):
         """
         raise NotImplementedError('PluginContext.retry_close')
 
+    def spawn(self, fn, *args, **kwargs):
+        """在后台线程里执行可能阻塞的操作，立即返回线程对象。
+
+        **必须异步的调用**（v2.13.0 明确写入契约，文档 §9 同步更新）：
+
+          | 操作 | 典型耗时 | 为什么要异步 |
+          |---|---|---|
+          | `ctx.snapshot()` / `ctx.procs()` 之外的全表轮询 | 5~50ms | 进程多时线性增长 |
+          | 关闭进程、等待退出（WM_CLOSE / taskkill / 句柄等待） | 0.3~6s | 会占满 close_wait 期限 |
+          | 启动外部程序（Popen / ShellExecute） | 10ms~数秒 | 冷启动受杀软/磁盘影响 |
+          | 驱动/PDH/DXGI/ADL 查询（见 desktop_hud） | 10ms~数秒 | 驱动卡住是常见故障 |
+          | 读写大文件、注册表全量枚举、`icacls`/PowerShell | 10ms~1s | 冷启动抖动大 |
+
+        `on_tick` 里对上述操作一律走 `ctx.spawn(...)`；`on_session_close`
+        这类"必须在本轮决定是否重试"的钩子仍要同步判断（快照失败就
+        `ctx.retry_close`），但真正的关闭动作可以交给后台线程。
+        后台线程里的异常由宿主捕获并写日志/事件流，不会带走守护。
+        """
+        raise NotImplementedError('PluginContext.spawn')
+
     # ---- 私有状态文件 ----
     def write_state(self, name, obj):
         """原子写 data_dir\\<name>.json（tmp + os.replace）。"""

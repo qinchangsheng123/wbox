@@ -68,6 +68,13 @@ class Harness(object):
             core_defaults.DEFAULTS, self.entry))
         self.plugin.close_pid = lambda pid, name: self.closed.append((pid, name))
 
+        def batch(targets):
+            # v2.0.0：close_owned 改走批量入口（与 gamepp 一致），测试桩随之上移，
+            # 否则会真的调用 taskkill 去关假 pid。
+            self.closed.extend(targets)
+            return dict((pid, 'exited') for pid, _n in targets)
+        self.plugin._close_batch = batch
+
     def _retry(self, delay=2.0):
         self.retries.append(delay)
         return True

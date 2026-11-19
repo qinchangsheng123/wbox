@@ -363,14 +363,23 @@ def _detached_cmd(script):
 
 
 def uninstall(target, task, log):
+    # v2.13.0：卸载也走事务状态。卸载比安装更容易被打断（目录里还有正在
+    # 退出的守护、杀软锁着文件），下次启动安装器/守护时能识别"删了一半"。
+    import install_txn
+    prev = install_txn.recover(target, log=lambda m: log_line(m, log))
+    if prev.get('action'):
+        log_line('上次卸载未正常结束：%s' % prev.get('text'), log)
+    txn = install_txn.begin('uninstall', target, task)
     log_line('停止守护', log)
     stop_guard(target)
     # 用户自装插件先备份：下一步会把整个安装目录删掉，插件作者的东西不该跟着没。
     backup = backup_user_plugins(target, log)
     if backup:
         log_line('用户插件备份位置：%s' % backup, log)
+    install_txn.step(txn, 'backup_plugins', 'task')
     log_line('删除计划任务 %s' % task, log)
     delete_task(task)
+    install_txn.step(txn, 'task_deleted', 'shortcuts')
     sm_root = os.path.join(os.environ.get('ProgramData', r'C:\ProgramData'),
                            'Microsoft', 'Windows', 'Start Menu', 'Programs')
     desktop = os.path.join(os.environ.get('USERPROFILE', ''), 'Desktop')
@@ -394,6 +403,7 @@ def uninstall(target, task, log):
         pass
     drop_uninstall_key()
     log_line('已清理快捷方式与注册表项', log)
+    install_txn.step(txn, 'registry_dropped', 'files')
 
     me = os.path.abspath(sys.executable)
     inside = os.path.normcase(me).startswith(os.path.normcase(target) + os.sep)
@@ -405,9 +415,14 @@ def uninstall(target, task, log):
             os.path.join(SYS32, 'ping.exe'), target)
         _detached_cmd(script)
         log_line('目录将在 2 秒后删除：%s' % target, log)
+        # 延时删除是另一条进程在跑：事务日志**故意不清理**。下次运行如果
+        # 目录还在，recover() 会报"卸载未删干净"，而不是假装成功。
+        install_txn.step(txn, 'files_deferred', 'deferred')
     else:
         shutil.rmtree(target, ignore_errors=True)
         log_line('已删除目录：%s' % target, log)
+        install_txn.step(txn, 'files_deleted', 'done')
+        install_txn.finish(txn)
         # 自己是从 %TEMP% 跑起来的临时副本（Setup onefile 路径），退出后把自个儿删掉
         if os.path.normcase(me).startswith(os.path.normcase(tempfile.gettempdir())):
             _detached_cmd('"%s" -n 3 127.0.0.1 >nul & del /f /q "%s"'

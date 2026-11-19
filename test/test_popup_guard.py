@@ -252,6 +252,90 @@ check(pg_guard._target(1, WIN_CB) is False,
       "path_hints=[''] 时 _target 对同名 exe 仍为 False（QA 复现例）")
 check(pg_guard._target(2, GAME_CB) is True, 'path_hints=[\'\'] 时游戏目录内的同名 exe 仍命中')
 
+print('[12] 观察模式：只记录不关闭（窗口 / 提前拦截 / 进程树三条链路）')
+# a) 退出后窗口扫描：命中也不发 WM_CLOSE，记录里有进程名/标题/pid/规则
+LOGS.clear()
+pg12 = pgmod.PopupGuard(cfg(observe_only=True), log)
+now12 = time.time()
+pg12.arm(now12, PROCS)
+win12 = tk.Tk()
+win12.title('直播 - 观察模式')
+win12.geometry('240x120+160+160')
+win12.update()
+pg12.tick(now12 + 1, PROCS)
+win12.update()
+check(exists(win12), '观察模式下命中窗口不关')
+obs = [r for r in pg12.records if r['action'] == 'observe']
+check(len(obs) == 1 and obs[0]['pid'] == ME and '直播' in obs[0]['title']
+      and obs[0]['rule'], '观察记录带 pid/标题/规则：%r' % (obs,))
+check(not any('已关闭弹窗' in m for m in LOGS), '没有关闭日志')
+try:
+    win12.destroy()
+except Exception:
+    pass
+
+# b) 会话中提前拦截：同样只记录
+orig_enum = pgmod.enum_windows
+orig_path = pgmod.process_path
+orig_close = pgmod.close_window
+closed_hwnds = []
+pgmod.enum_windows = lambda include_untitled=False: list(HOST_WINS)
+pgmod.process_path = lambda pid: {
+    555: HOST,
+    777: r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+}.get(pid, '')
+pgmod.close_window = lambda hwnd: (closed_hwnds.append(hwnd) or
+                                   (True, '已发送 WM_CLOSE'))
+try:
+    obs_cfg = cfg(process_names=['clientbrowser.exe'],
+                  path_hints=['\\clientbrowser2\\'],
+                  early_close_enabled=True, observe_only=True)
+    pg12b = pgmod.PopupGuard(obs_cfg, log)
+    n = pg12b.watch_early({555: 'clientbrowser.exe', 777: 'chrome.exe'})
+    check(n == 0 and not closed_hwnds, '观察模式提前拦截不发 WM_CLOSE')
+    obs = [r for r in pg12b.records if r['action'] == 'observe']
+    check(len(obs) == 2 and all(r['pid'] == 555 for r in obs),
+          '两个宿主窗口各留一条观察记录：%d' % len(obs))
+    check(pg12b.record_seq == len(pg12b.records), 'record_seq 与记录数一致')
+finally:
+    pgmod.enum_windows = orig_enum
+    pgmod.process_path = orig_path
+    pgmod.close_window = orig_close
+
+# c) 进程树清理：observe_only 时绝不 kill_process（契约"不结束进程"）
+orig_procs = pgmod.enum_procs
+orig_path = pgmod.process_path
+orig_born = pgmod.process_created
+orig_kill = pgmod.kill_process
+killed = []
+pgmod.enum_procs = lambda: [(555, 'clientbrowser.exe', 4)]
+pgmod.process_path = lambda pid: HOST if pid == 555 else ''
+pgmod.process_created = lambda pid: 1000.0
+pgmod.kill_process = lambda pid: (killed.append(pid) or (True, ''))
+try:
+    obs_cfg = cfg(process_names=['clientbrowser.exe'],
+                  path_hints=['\\clientbrowser2\\'], observe_only=True)
+    pg12c = pgmod.PopupGuard(obs_cfg, log, game_alive=lambda: False)
+    n = pg12c.sweep('观察测试')
+    check(n == 0 and not killed, '观察模式不结束任何进程（killed=%r）' % killed)
+    obs = [r for r in pg12c.records if r['action'] == 'observe']
+    check(len(obs) == 1 and obs[0]['pid'] == 555
+          and obs[0]['exe'] == 'clientbrowser.exe',
+          '宿主进程树留一条观察记录：%r' % (obs,))
+    # 对照：关掉观察模式，同一替身下真的动手（证明替身链路本身有效）
+    kill_cfg = cfg(process_names=['clientbrowser.exe'],
+                   path_hints=['\\clientbrowser2\\'])
+    pg12d = pgmod.PopupGuard(kill_cfg, log, game_alive=lambda: False)
+    n = pg12d.sweep('对照测试')
+    check(n == 1 and killed == [555], '非观察模式同一链路会结束宿主')
+    check(any(r['action'] == 'host_killed' for r in pg12d.records),
+          '真实清理留 host_killed 记录')
+finally:
+    pgmod.enum_procs = orig_procs
+    pgmod.process_path = orig_path
+    pgmod.process_created = orig_born
+    pgmod.kill_process = orig_kill
+
 print('')
 print('ALL PASS' if not FAILED else 'FAILED: %d -> %s' % (len(FAILED), FAILED))
 sys.exit(1 if FAILED else 0)

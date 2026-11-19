@@ -32,6 +32,7 @@ import shared_runtime
 # 源码模式补 src 路径；冻结模式由 setup_abg.spec 的 pathex 提供。
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), 'src'))
+import install_txn
 import uninstall_core
 import skins
 import sprite
@@ -606,6 +607,12 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
         if progress is not None:
             progress(frac, text, detail)
 
+    # v2.13.0：事务状态先落盘。断电/被杀后下次运行安装器或守护时，
+    # install_txn.recover() 能说清停在哪一步、要不要恢复配置。
+    prev = install_txn.recover(target, log=log)
+    if prev.get('action'):
+        log_line('上次安装未正常结束：%s' % prev.get('text'), log)
+    txn = install_txn.begin('install', target, task, VERSION)
     step(0.05, '正在检查安装环境…')
     legacy_stash, legacy_remove = migrate_legacy(target, log)
     legacy_exe = os.path.join(target, uninstall_core.LEGACY_EXE)
@@ -621,14 +628,23 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
         log_line('停止正在运行的守护', log)
         stop_guard(target)
     old_cfg = read_json(os.path.join(target, 'config.json'))
+    # 覆盖前备份配置：合并/迁移写坏时能原地恢复（事务日志里记着路径）
+    cfg_path = os.path.join(target, 'config.json')
+    bk = install_txn.backup_file('config', cfg_path)
+    if bk:
+        install_txn.remember_backup(txn, 'config', cfg_path, bk)
+        log_line('已备份原配置：%s' % bk, log)
     # v2.11.3：本体不带插件（插件在 wbox-plugins 仓库单独分发）。升级时仍然
     # 先把用户已装的插件整目录暂存 —— payload 不会再写入任何 plugins\ 内容，
     # 所以这一步只防"解包把旧目录清掉"，还原后版本与内容逐字节不变。
     stash = stash_user_plugins(target, log)
+    install_txn.step(txn, 'stash_plugins', 'extract')
     step(0.15, '正在复制程序文件…')
     n = extract_payload(target)
     log_line('已解包 %d 个文件到 %s' % (n, target), log)
+    install_txn.step(txn, 'extract', 'shared_runtime', files=n)
     restore_shared_runtime(target, log)
+    install_txn.step(txn, 'shared_runtime', 'plugins')
     step(0.50, '正在还原插件…', '已写入 %d 个文件' % n)
     restore_user_plugins(stash, target, log)
     restore_user_plugins(legacy_stash, target, log)
@@ -636,6 +652,7 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
     if isinstance(old_cfg, dict):
         merge_config(target, old_cfg)
         log_line('已保留原有 config.json 设置并补齐新增项', log)
+    install_txn.step(txn, 'config_merged', 'shortcuts')
     # 只统计、不改动：告诉安装日志"这台机器上现在有几个插件"，出问题时一眼
     # 看出是本体没装插件还是用户没装插件（v2.11.3 起两者的责任边界更清楚了）。
     root = os.path.join(target, 'plugins')
@@ -663,6 +680,7 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
         except OSError as e:
             log_line('旧版卸载副本移除失败：%r' % (e,), log)
 
+    install_txn.step(txn, 'plugins_restored', 'shortcuts')
     step(0.72, '正在生成快捷方式…')
     exe = os.path.join(target, APP_EXE)
     sm = start_menu_dir()
@@ -697,6 +715,7 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
         except OSError as e:
             log_line('旧名快捷方式清理失败：%s（%r）' % (p, e), log)
 
+    install_txn.step(txn, 'shortcuts', 'task')
     step(0.82, '正在设置开机自动运行…')
     ok, how = (False, 'skip')
     if not no_task:
@@ -704,6 +723,7 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
     log_line('计划任务 %s：%s' % (task, ('已创建（%s）' % how) if ok else
                                 ('跳过' if no_task else '创建失败 ' + str(how)[:160])), log)
     step(0.92, '正在收尾，请稍候…')
+    install_txn.step(txn, 'task', 'registry')
     write_uninstall_key(target)
     log_line('已写入卸载项', log)
     # 同路径覆盖 exe 后，Windows 可能继续拿图标缓存里的旧图标；通知 Shell
@@ -727,6 +747,7 @@ def install(target, task, auto_start, launch, log, no_task=False, progress=None)
     if legacy_remove:
         shutil.rmtree(uninstall_core.LEGACY_DIR, ignore_errors=True)
         log_line('旧名安装目录已删除：%s' % uninstall_core.LEGACY_DIR, log)
+    install_txn.finish(txn)
     return True
 
 

@@ -160,17 +160,17 @@ python tools\pack.py --check <file.zip>  # 只校验不安装
 
 | id | 功能 | 版本 | 下载 | 说明 |
 |---|---|---|---|---|
-| `afterburner` | 小飞机关联启动 | 2.1.1 | [zip][r-ab] | 游戏启动拉起 MSI Afterburner / RTSS，退出后只关本局新起的 |
-| `gamepp` | 游戏加加联动 | 1.1.1 | [zip][r-gp] | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表） |
-| `ace` | ACE 防护 | 2.1.1 | [zip][r-ace] | 游戏期间限速 + 退出后按四道闸门清残留 |
-| `popup` | 弹窗关闭 | 2.0.1 | [zip][r-pop] | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树 |
-| `desktop_hud` | 桌面监控悬浮窗 | 1.6.0 | [zip][r-hud] | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
+| `afterburner` | 小飞机关联启动 | 2.2.0 | [zip][r-ab] | 游戏启动拉起 MSI Afterburner / RTSS，退出后只关本局新起的；可设关闭倒计时 |
+| `gamepp` | 游戏加加联动 | 1.2.0 | [zip][r-gp] | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表）；可设关闭倒计时 |
+| `ace` | ACE 防护 | 2.2.0 | [zip][r-ace] | 游戏期间限速 + 退出后按四道闸门清残留，每次判定留决策记录 |
+| `popup` | 弹窗关闭 | 2.1.0 | [zip][r-pop] | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树；观察模式只记录不动手 |
+| `desktop_hud` | 桌面监控悬浮窗 | 1.6.1 | [zip][r-hud] | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
 
-[r-ab]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/afterburner-v2.1.1
-[r-gp]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/gamepp-v1.1.1
-[r-ace]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/ace-v2.1.1
-[r-pop]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/popup-v2.0.1
-[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.6.0
+[r-ab]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/afterburner-v2.2.0
+[r-gp]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/gamepp-v1.2.0
+[r-ace]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/ace-v2.2.0
+[r-pop]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/popup-v2.1.0
+[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.6.1
 
 ## 测试
 
@@ -203,6 +203,36 @@ python test\test_qa_*.py
 ```
 
 ## 版本
+
+**v2.13.0**（2026-11-19）
+
+一轮稳定性专项（9 项），全部带回归测试，全套 49 个测试单进程通过：
+
+- **HUD 采样线程重入修复**：上一轮采样没结束就不再叠新一轮，慢机器上不再
+  堆积采样线程。
+- **插件钩子耗时监控 + 卡死隔离**：每个钩子计时，超 5 秒记警告，连续 3 次
+  慢钩子把该插件降级隔离（面板可见、可一键恢复）；新增 `ctx.spawn()` 把耗时
+  操作丢到异步线程，退出钩子里不再阻塞守护主循环。
+- **进程身份统一校验**：关进程前用「pid + 创建时刻」双确认，pid 被系统复用
+  也不会关错；小飞机 / 游戏加加 / ACE / 弹窗四条链路同一套口径。
+- **ACE 清理决策记录**：每次判定（清 / 不清 / 为什么）写结构化记录，
+  事后可查「当时为什么没动手」。
+- **配置统一校验**：`config_schema.py` 声明式校验，非法值修正或回退默认，
+  修正留痕到 `config_issues.json`；面板与守护同一套规则。
+- **配置迁移可见可回滚**：升级合并配置前自动备份，迁移写入日志，出问题
+  能退回上一份。
+- **安装事务**：安装 / 升级 / 卸载中断后可恢复（`install_txn.py`，事务状态
+  在 `%ProgramData%\WBOX`），不再留下半装状态。
+- **结构化事件流 + 导出诊断**：`events.jsonl`（JSONL、1 MB 轮转、写入永不
+  抛错）；齿轮菜单新增「导出诊断」，一键打包日志 / 事件 / 配置 / 插件状态
+  成 zip，也支持 `WBOX.exe --diag`。
+- **设置面板拆分**：超大的 `settings_gui.py` 拆出 `panel_env` / `win_env` /
+  `panel_state` / `ui_gfx` / `ui_widgets` 五个模块，行为不变。
+- 插件同步升级：popup 2.1.0 新增**观察模式**（只记录本应关闭的窗口 / 进程，
+  不动手）+ 最近动作记录；afterburner 2.2.0 / gamepp 1.2.0 新增**关闭倒计时**
+  （退出后先等 N 秒再关，期间回到游戏自动取消）；ace 2.2.0 决策记录；
+  desktop_hud 1.6.1 采样重入修复。插件规范新增 §5.6（钩子耗时 / 异步约定）
+  与 §9.6（事件流 / 诊断包）。
 
 **v2.12.2**（2026-11-19）
 

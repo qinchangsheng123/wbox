@@ -11,16 +11,20 @@
      不再依赖 PowerShell 脚本与 SYSTEM 计划任务。
 """
 import atexit
+import copy
 import ctypes
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
 import time
 from ctypes import wintypes
 
+import config_schema
 import core_defaults
+import events
 import game_lib
 import plugin_api
 import plugin_host
@@ -414,6 +418,9 @@ class Guard(object):
 
     def __init__(self, host=None):
         self.cfg = dict(DEFAULTS)
+        self.cfg_issues = []
+        self._cfg_issue_sig = None
+        self.session_seq = 0
         self.cfg_loaded = False
         self.cfg_mtime = None
         self.watch = set()
@@ -611,10 +618,19 @@ class Guard(object):
         prev_loaded = self.cfg_loaded
         prev_lib = self.cfg.get('game_lib')
         prev_roots = self.cfg.get('game_roots')
-        # ① 段级迁移（ace_guard -> ace_cleanup 这类）必须在合并默认值之前跑
-        self.host.dispatch('migrate', data)
+        # ① 段级迁移（ace_guard -> ace_cleanup 这类）必须在合并默认值之前跑。
+        # v2.13.0：迁移前留快照，迁移后比对并备份原文件 —— 升级后"设置看着
+        # 保存了但行为没变"时，能直接看到哪几个键被搬走、原件在哪。
+        data = self._migrate_with_record(data)
         # ② 三段合并；merge_defaults 是纯函数，不会改 DEFAULTS 也不会改 data
         cfg = plugin_host.merge_defaults(DEFAULTS, self.host.registry, data)
+        # v2.13.0：统一校验（类型/范围/枚举/列表元素）。修正能修正的，回退
+        # 修正不了的，并把每一条 {字段, 原值, 回退值, 原因} 写进日志与
+        # config_issues.json —— 面板/自检/诊断包都从这里取。
+        base_defaults = plugin_host.merge_defaults(DEFAULTS, self.host.registry, {})
+        cfg, self.cfg_issues = config_schema.validate(
+            cfg, defaults=base_defaults, entries=self.host.registry)
+        self._note_config_issues(self.cfg_issues, write_state=True)
         self.cfg = cfg
         self.host.cfg = cfg
         self.cfg_mtime = mtime
@@ -631,11 +647,127 @@ class Guard(object):
         watch |= self.lib_exes
         watch -= set(n.lower() for n in cfg.get('exclude_processes', []))
         self.watch = watch
+        events.emit('config', code='CONFIG_LOADED', plugins=len(self.host.plugins),
+                    msg='监控 %d 个游戏进程名' % len(watch))
         log('配置已加载：手工名单 %d 项，目录发现 %d 项，游戏库 %d 个，合计监控 %d 个游戏进程名'
             % (len(cfg.get('game_processes', [])), len(auto),
                len(self.lib.get('games', [])), len(watch)))
         # ③ 通知插件；每个插件会收到自己那份合并结果（宿主负责切分）
         self.host.dispatch('on_config', cfg)
+
+    # ------------------------------------------------------ 配置迁移记录
+    @staticmethod
+    def _flat_diff(before, after, prefix=''):
+        """把两层 dict 压成点路径差异：返回 (added, removed, changed)。"""
+        added, removed, changed = [], [], []
+        if not isinstance(before, dict):
+            before = {}
+        if not isinstance(after, dict):
+            after = {}
+        for key in after:
+            path = '%s.%s' % (prefix, key) if prefix else key
+            if key not in before:
+                added.append(path)
+            elif isinstance(after[key], dict) and isinstance(before[key], dict):
+                a, r, c = Guard._flat_diff(before[key], after[key], path)
+                added.extend(a)
+                removed.extend(r)
+                changed.extend(c)
+            elif after[key] != before[key]:
+                changed.append(path)
+        for key in before:
+            if key not in after:
+                removed.append('%s.%s' % (prefix, key) if prefix else key)
+        return added, removed, changed
+
+    def _migrate_with_record(self, data):
+        """执行插件迁移并留下可回溯记录（备份 + 差异 + 恢复路径）。"""
+        if not isinstance(data, dict):
+            return data
+        before = copy.deepcopy(data)
+        try:
+            self.host.dispatch('migrate', data)
+        except Exception as e:      # dispatch 本身吞异常；这里兜底防御
+            log('配置迁移异常，沿用迁移前的配置：%r' % (e,))
+            return before
+        if not isinstance(data, dict):
+            log('配置迁移把顶层改坏了，沿用迁移前的配置')
+            return before
+        if data == before:
+            return data
+        added, removed, changed = self._flat_diff(before, data)
+        stamp = time.strftime('%Y%m%d-%H%M%S')
+        backup = ''
+        try:
+            if os.path.isfile(CONFIG_PATH):
+                backup = os.path.join(
+                    BASE, 'config.json.bak-%s-%s' % (core_defaults.VERSION, stamp))
+                shutil.copy2(CONFIG_PATH, backup)
+        except OSError as e:
+            log('迁移前备份 config.json 失败：%r' % (e,))
+        log('配置迁移完成：新增 %d 项、删除 %d 项、改写 %d 项%s'
+            % (len(added), len(removed), len(changed),
+               ('；原文件已备份为 %s' % os.path.basename(backup)) if backup else
+               '；原文件备份失败，回退请手动恢复'))
+        if removed:
+            log('  迁移删除的旧键：%s' % ', '.join(removed[:12]))
+        if changed:
+            log('  迁移改写的键：%s' % ', '.join(changed[:12]))
+        events.emit('config', code='CONFIG_MIGRATED', added=len(added),
+                    removed=len(removed), changed=len(changed),
+                    msg=', '.join((added + changed)[:6]))
+        self._record_migration({'at': stamp, 'version': core_defaults.VERSION,
+                                'backup': backup, 'added': added,
+                                'removed': removed, 'changed': changed})
+        return data
+
+    def _record_migration(self, record):
+        """把迁移记录追加进 config_migrations.json（保留最近 10 次）。"""
+        path = os.path.join(BASE, 'config_migrations.json')
+        items = []
+        try:
+            with open(path, 'r', encoding='utf-8-sig') as f:
+                raw = json.load(f)
+            if isinstance(raw, dict) and isinstance(raw.get('items'), list):
+                items = raw['items']
+        except (OSError, ValueError):
+            items = []
+        items.append(record)
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump({'version': core_defaults.VERSION,
+                           'items': items[-10:]}, f, ensure_ascii=False, indent=1)
+        except OSError as e:
+            log('写 config_migrations.json 失败：%r' % (e,))
+
+    def _note_config_issues(self, issues, write_state=False):
+        """配置校验结果：日志去重 + 落盘（config_issues.json）。
+
+        同一批问题只记一次，避免每次热加载都刷同样的行；问题消失时记一行
+        「已恢复正常」并清空状态文件。
+        """
+        sig = config_schema.signature(issues)
+        if sig == getattr(self, '_cfg_issue_sig', None):
+            return
+        changed = sig != getattr(self, '_cfg_issue_sig', None)
+        self._cfg_issue_sig = sig
+        if not issues:
+            if changed:
+                log('配置校验：所有字段有效')
+            return
+        log('配置校验发现 %d 处问题，已按下面采用值继续运行：%s'
+            % (len(issues), config_schema.describe(issues)))
+        events.emit('config', code='CONFIG_INVALID', count=len(issues),
+                    msg=config_schema.describe(issues, limit=3))
+        if write_state:
+            try:
+                with open(os.path.join(BASE, 'config_issues.json'), 'w',
+                          encoding='utf-8') as f:
+                    json.dump({'version': core_defaults.VERSION,
+                               'checked_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+                               'items': issues}, f, ensure_ascii=False, indent=1)
+            except OSError as e:
+                log('写 config_issues.json 失败：%r' % (e,))
 
     def refresh_lib(self, force=False):
         """刷新游戏库识别结果（默认用 6 小时缓存；force=True 强制重扫）。"""
@@ -768,7 +900,10 @@ class Guard(object):
                 self.session_state = plugin_api.STATE_ACTIVE
                 self.session_started_at = now
                 self.session_resumed = False
+                self.session_seq += 1
                 log('检测到游戏: %s' % ', '.join(games))
+                events.emit('session', code='SESSION_START',
+                            session=self.session_seq, msg=', '.join(games))
                 hook = 'on_session_start'
             elif self.session_state == plugin_api.STATE_GRACE:
                 # Unity 等游戏启动时会"进程闪断"：只要还在宽限期内就当同一会话继续，
@@ -776,6 +911,8 @@ class Guard(object):
                 self.session_state = plugin_api.STATE_ACTIVE
                 self.grace_until = 0.0
                 self.session_resumed = True
+                events.emit('session', code='SESSION_RESUME',
+                            session=self.session_seq, msg=', '.join(games))
                 hook = 'on_session_resume'
             self.last_games = games
             if hook:
@@ -788,6 +925,8 @@ class Guard(object):
             self.grace_until = now + grace
             self.last_games = []
             log('游戏已全部退出，%d 秒后关闭小飞机' % grace)
+            events.emit('session', code='SESSION_GRACE',
+                        session=self.session_seq, grace_sec=grace)
             self.host.dispatch('on_session_grace',
                                self.make_tick(now, procs, names, games))
         if self.session_state == plugin_api.STATE_GRACE and now >= self.grace_until:
@@ -807,6 +946,9 @@ class Guard(object):
                 self.session_state = plugin_api.STATE_IDLE
                 self.grace_until = 0.0
                 self.session_resumed = False
+                events.emit('session', code='SESSION_CLOSE',
+                            session=self.session_seq,
+                            retries=self.close_retries)
 
     # ---------- 主循环 ----------
     def tick(self, now=None):
@@ -1242,6 +1384,20 @@ def main():
     # 插件目录先收尾再建宿主：Guard() 构造时就会扫描 plugins\ ，
     # 恢复晚一步就会出现"这轮看到空目录、下轮才看到插件"。
     _recover_plugins()
+    events.configure(BASE)
+    events.emit('startup', code='GUARD_START', pid=os.getpid())
+    # v2.13.0：上次安装/卸载被打断时在这里收尾（恢复配置 / 报告不完整），
+    # 不阻断启动，只把结论写进日志与事件流。
+    try:
+        import install_txn
+        _txn = install_txn.recover(BASE, log=log)
+        if _txn.get('action'):
+            log('安装事务收尾：%s' % _txn.get('text'))
+            events.emit('install', code='TXN_RECOVER',
+                        action=_txn.get('action'),
+                        msg=_txn.get('text') or '')
+    except Exception as _e:
+        log('安装事务收尾失败（忽略）：%r' % (_e,))
     g = Guard()
     # v2.5.0：面板状态行改读心跳管道（连上=活着）。服务挂在 main 而不是
     # Guard.run：离线测试直接调 run() 时不起管道，不抢全局管道名。

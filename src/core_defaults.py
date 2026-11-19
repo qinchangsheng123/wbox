@@ -16,7 +16,7 @@
 """
 
 # 版本号单一来源：取版本号若 import settings_gui 会把 tkinter 拉进守护进程。
-VERSION = '2.12.2'
+VERSION = '2.13.0'
 
 # v2.11.3：本体不再附带插件，官方插件在独立仓库分发。面板的「浏览插件库」
 # 与卸载提示都引用这一处，避免 URL 散落在文案里。
@@ -104,6 +104,9 @@ POPUP_DEFAULTS = {
                       'qq.exe', 'wechat.exe', 'weixin.exe', 'tim.exe',
                       'qqprotect.exe'],
     'log_all_new': False,      # 默认不把浏览器/任务栏窗口记成"新窗口"噪声
+    # v2.13.0：观察模式。只判定、只记录（进程名/标题/pid/规则），不发 WM_CLOSE、
+    # 不结束进程 —— 怀疑误拦时先开一轮观察，看日志里"本应关闭谁"再决定。
+    'observe_only': False,
 }
 DEFAULTS['popup_guard'] = dict(POPUP_DEFAULTS)
 

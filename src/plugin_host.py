@@ -18,9 +18,11 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import types
 
+import events
 import plugin_api
 
 # ---------------------------------------------------------------- 常量
@@ -36,6 +38,15 @@ DEFAULT_API = plugin_api.API_VERSION
 # 单次钩子耗时超过这个秒数就记一条警告。Python 无法安全中断同步调用，
 # 所以只告警不终止（文档 3.3）。
 HOOK_WARN_SEC = 5.0
+
+# 同一个插件连续这么多次超过告警线 -> 判定"钩子卡顿"，状态降级并在面板/日志
+# 里点名是哪个钩子、耗时多少。插件本身仍是完全信任代码，宿主没法抢占它，
+# 但至少要让用户看到"守护为什么变慢"，而不是只在日志里刷一行耗时。
+HOOK_SLOW_DEGRADE = 3
+
+# 每个插件每个钩子的耗时统计保留多久（秒）：超过就从状态里抹掉，避免长期
+# 挂着一个几十秒前的旧峰值误导排查。
+HOOK_STAT_TTL_SEC = 1800.0
 
 # 同类异常 60 秒内只记一条日志，避免每轮 tick 刷爆 guard.log
 ERR_LOG_WINDOW_SEC = 60.0
@@ -63,7 +74,9 @@ USABLE_STATUS = frozenset((STATUS_OK, STATUS_DEGRADED))
 # 不能复制一份到插件（复制就会出现"插件自己那份逻辑绕过闸门"的口子）。
 # 插件只在守护进程的钩子里懒加载它，面板进程走 gui_* 时不会把 Win32 拉进来。
 CORE_MODULES = frozenset(('ace_native', 'popup_guard', 'game_lib',
-                          'core_defaults', 'plugin_api', 'guard_core'))
+                          'core_defaults', 'plugin_api', 'guard_core',
+                          # v2.13.0：插件要写结构化事件（ACE 决策/弹窗动作）
+                          'events'))
 
 # 插件不得声明/写入的内核保留键前缀（文档 4.4）
 _RESERVED_PREFIXES = ('poll_', 'exclude_', '_')
@@ -165,6 +178,12 @@ class RegistryEntry(object):
         # 不进 plugins_state.json —— 那份文件的口径见文档 6.4，别混）。
         self.last_tick_at = 0.0
         self.state_text = ''     # ctx.set_status() 写的一行摘要
+        # v2.13.0 钩子耗时监测：hook -> {'runs','last','max','slow','slow_at'}
+        # 只留最近 HOOK_STAT_TTL_SEC 内发生过的慢事件，避免旧峰值长期挂着。
+        self.hook_stats = {}
+        self.hook_slow_streak = 0     # 连续超过告警线的次数（跨钩子累计）
+        self.slow_hook = ''           # 最近一次慢钩子的名字
+        self.slow_sec = 0.0           # 最近一次慢钩子的耗时
         self.plugin = None
         self.dir = dir
 
@@ -183,6 +202,11 @@ class RegistryEntry(object):
             'last_error': self.last_error,
             'last_error_at': round(self.last_error_at, 3),
             'ticks': self.ticks,
+            # v2.13.0：哪个钩子慢、慢了多少（没有慢事件时为空/0）
+            'slow_hook': self.slow_hook,
+            'slow_sec': round(self.slow_sec, 3),
+            'slow_count': sum(int(v.get('slow') or 0)
+                              for v in self.hook_stats.values()),
         }
 
     def __repr__(self):
@@ -793,6 +817,30 @@ class HostContext(plugin_api.PluginContext):
         value = self._provide('retry_close', delay)
         return False if value is _MISSING else bool(value)
 
+    def spawn(self, fn, *args, **kwargs):
+        """在后台线程里跑可能阻塞的活（见 plugin_api.PluginContext.spawn）。
+
+        这是宿主给插件的**唯一**异步出口：插件把进程枚举/关闭、启动外部程序、
+        驱动查询之类的工作丢进来，on_tick 立刻返回，守护的会话检测不被拖慢。
+        """
+        if not callable(fn):
+            raise TypeError('ctx.spawn 需要可调用对象')
+        name = str(kwargs.pop('name', '') or ('%s-worker' % self.id))
+        ctx = self
+
+        def _run():
+            try:
+                fn(*args, **kwargs)
+            except BaseException as ex:
+                ctx.log('后台任务 %s 失败：%r' % (name, ex))
+                events.emit('plugin.task', code='TASK_ERROR', plugin=ctx.id,
+                            msg='%s: %r' % (name, ex))
+
+        t = threading.Thread(target=_run, name=name[:40])
+        t.daemon = True
+        t.start()
+        return t
+
     # ---- 私有状态文件 ----
     def _state_path(self, name):
         safe = str(name)
@@ -966,6 +1014,10 @@ class PluginHost(object):
 
         拦 BaseException 而不是 Exception：插件调 sys.exit() 抛的 SystemExit
         会把整个守护带走（守护是后台进程，没有"退到上一级"这回事）。
+
+        v2.13.0：耗时用 perf_counter 计（墙钟跳变不影响），每次都记进
+        entry.hook_stats；连续 HOOK_SLOW_DEGRADE 次超线就把插件降级并在
+        日志/事件流里点名，让"守护变慢"能定位到具体插件与钩子。
         """
         plugin = entry.plugin
         if plugin is None:
@@ -973,25 +1025,67 @@ class PluginHost(object):
         fn = getattr(plugin, hook, None)
         if not callable(fn):
             return False
-        t0 = time.time()
+        t0 = time.perf_counter()
         try:
             fn(*args)
         except BaseException as ex:      # noqa: BLE001 - 见上面的说明
-            self._record_error(entry, hook, ex)
-            cost = time.time() - t0
+            cost = time.perf_counter() - t0
+            self._record_error(entry, hook, ex, cost)
             self._warn_slow(entry, hook, cost)
             return False
-        self._record_ok(entry, hook)
-        self._warn_slow(entry, hook, time.time() - t0)
+        cost = time.perf_counter() - t0
+        self._record_timing(entry, hook, cost)
+        self._record_ok(entry, hook, cost)
+        self._warn_slow(entry, hook, cost)
         return True
+
+    def _record_timing(self, entry, hook, cost):
+        """记一次钩子耗时；连续超线就降级并点名（见 HOOK_SLOW_DEGRADE）。"""
+        now = time.time()
+        st = entry.hook_stats.get(hook)
+        if st is None:
+            st = {'runs': 0, 'last': 0.0, 'max': 0.0, 'slow': 0, 'slow_at': 0.0,
+                  'last_at': 0.0}
+            entry.hook_stats[hook] = st
+        elif now - (st['last_at'] or now) > HOOK_STAT_TTL_SEC:
+            # 长时间没跑（空闲/插件刚恢复）：旧峰值不再代表当前表现
+            st.update({'max': 0.0, 'slow': 0, 'slow_at': 0.0})
+        st['runs'] += 1
+        st['last'] = cost
+        st['last_at'] = now
+        if cost <= self.hook_warn_sec:
+            st['max'] = max(st['max'], cost)
+            entry.hook_slow_streak = 0
+            return
+        st['slow'] += 1
+        st['slow_at'] = now
+        st['max'] = max(st['max'], cost)
+        entry.hook_slow_streak += 1
+        entry.slow_hook = hook
+        entry.slow_sec = cost
+        self.state_dirty = True
+        events.emit('plugin.hook', code='HOOK_SLOW', plugin=entry.id,
+                    dur_ms=int(cost * 1000), hook=hook,
+                    streak=entry.hook_slow_streak,
+                    msg='%s 耗时 %.2fs（告警线 %.1fs）'
+                        % (hook, cost, self.hook_warn_sec))
+        if (entry.hook_slow_streak >= HOOK_SLOW_DEGRADE
+                and entry.status == STATUS_OK):
+            entry.status = STATUS_DEGRADED
+            entry.detail = '%s 连续 %d 次卡顿（最近 %.1fs）' % (
+                hook, entry.hook_slow_streak, cost)
+            self.log('[plugin] 插件 %s 的 %s 连续 %d 次超过 %.1fs，已标记为卡顿'
+                     '（守护会被一起拖慢；必要时在面板里停用该插件）'
+                     % (entry.id, hook, entry.hook_slow_streak,
+                        self.hook_warn_sec))
 
     def _warn_slow(self, entry, hook, cost):
         if cost > self.hook_warn_sec:
             self.log('[plugin] 插件 %s 的 %s 耗时 %.1fs（超过 %.0fs 告警线）'
                      % (entry.id, hook, cost, self.hook_warn_sec))
 
-    def _record_error(self, entry, hook, ex):
-        """采集一次插件异常：计数 + 状态降级 + 节流日志。"""
+    def _record_error(self, entry, hook, ex, cost=0.0):
+        """采集一次插件异常：计数 + 状态降级 + 节流日志 + 结构化事件。"""
         entry.error_count += 1
         entry.last_error = '%s: %s' % (type(ex).__name__, str(ex) or '<无消息>')
         entry.last_error_at = time.time()
@@ -1001,14 +1095,22 @@ class PluginHost(object):
         if hook == 'on_tick':
             entry.tick_fails += 1
         self.state_dirty = True
+        events.emit('plugin.hook', code='HOOK_ERROR', plugin=entry.id,
+                    dur_ms=int(cost * 1000), hook=hook,
+                    err=type(ex).__name__,
+                    msg=str(ex) or '<无消息>')
         self._log_error(entry, hook, ex)
 
-    def _record_ok(self, entry, hook):
-        """成功一次就恢复正常：清 on_tick 失败计数，degraded 回到 ok。"""
+    def _record_ok(self, entry, hook, cost=0.0):
+        """成功一次就恢复正常：清 on_tick 失败计数，degraded 回到 ok。
+
+        cost 超过告警线时**不**清降级标记：那一轮虽然没抛异常，但守护照样被
+        拖住了，状态改成 ok 会让面板/日志"刚报完卡顿又显示正常"来回闪。
+        """
         if hook == 'on_tick':
             entry.tick_fails = 0
             entry.tick_skip = 0
-        if entry.status == STATUS_DEGRADED:
+        if entry.status == STATUS_DEGRADED and cost <= self.hook_warn_sec:
             entry.status = STATUS_OK
             entry.detail = ''
             self.state_dirty = True

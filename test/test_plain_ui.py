@@ -25,8 +25,14 @@ for name in ('icon-light.ico', 'icon-dark.ico'):
 with open(os.path.join(TMP, 'config.json'), 'w', encoding='utf-8') as f:
     json.dump({'ui_theme': 'light'}, f)
 os.environ['ABG_BASE'] = TMP
-sys.modules.pop('settings_gui', None)
+# v2.13.0 拆分后 BASE/CFG 固化在 panel_env 等模块，必须整组一起摘，
+# 否则换 ABG_BASE 后重新 import 的 settings_gui 仍拿旧目录。
+_RESET = ('settings_gui', 'panel_env', 'win_env', 'panel_state',
+          'ui_gfx', 'ui_widgets')
+for _m in _RESET:
+    sys.modules.pop(_m, None)
 import settings_gui as sg  # noqa: E402
+import sprite  # noqa: E402  覆盖率缓存在 v2.13.0 拆分后位于 sprite 模块
 
 FAILS = []
 
@@ -181,11 +187,12 @@ def main():
         g = app.add_btn
         kinds = [g.type(i) for i in g.find_all()]
         check('image' in kinds, '＋图标画的是光栅 sprite：%r' % kinds)
-        check(len(sg._COV_CACHE) > 0, '覆盖率缓存已建立：%d 键' % len(sg._COV_CACHE))
-        n0 = len(sg._COV_CACHE)
+        check(len(sprite.COV_CACHE) > 0,
+              '覆盖率缓存已建立：%d 键' % len(sprite.COV_CACHE))
+        n0 = len(sprite.COV_CACHE)
         sw.event_generate('<Button-1>')
         root.update()
-        check(sw._anim_knob is None and len(sg._COV_CACHE) == n0,
+        check(sw._anim_knob is None and len(sprite.COV_CACHE) == n0,
               '极简拨动零动画链，几何不变不重算覆盖率')
 
         print('[5] 同窗换页：设置页入口与返回')
@@ -242,7 +249,8 @@ def main():
     with open(os.path.join(tmp2, 'config.json'), 'w', encoding='utf-8') as f:
         json.dump({'ui_skin': 'liquid-glass', 'ui_appearance': 'light'}, f)
     os.environ['ABG_BASE'] = tmp2
-    sys.modules.pop('settings_gui', None)
+    for _m in _RESET:
+        sys.modules.pop(_m, None)
     import settings_gui as sg2  # noqa: E402
     root2 = tk.Tk()
     root2.attributes('-alpha', 0.0)

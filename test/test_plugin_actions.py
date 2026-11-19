@@ -155,9 +155,10 @@ def main():
         # v2.7.0：内核行 12 -> 11（浅色/深色两行合成「外观与皮肤…」一行）
         # v2.9.0：内核行 11 -> 13（补「启动后收进托盘 / 游戏结束提示」两行）
         # v2.11.3：插件分组固定行 1 -> 2（「打开插件目录」+ 新增「浏览插件库」）
-        EXPECT_ROWS = 13 + 1 + 2 + 2
+    # v2.13.0：内核行 13 -> 14（维护区新增「导出诊断」）
+        EXPECT_ROWS = 14 + 1 + 2 + 2
         check(sg.menu_row_count(app.entries_all) == EXPECT_ROWS,
-              'menu_row_count 算出 %d 行（13 内核 + 标题 + 2 插件 + 打开目录/插件库 2）'
+              'menu_row_count 算出 %d 行（14 内核 + 标题 + 2 插件 + 打开目录/插件库 2）'
               % sg.menu_row_count(app.entries_all))
         app.open_settings()
         root.update()

@@ -313,9 +313,11 @@ print('[D] v1.6.0 游戏中停采样 = 停采样线程（FakeU + 桩采样器）
 
 
 class StubSampler(object):
-    def __init__(self):
+    def __init__(self, tag=''):
         self.n = 0
         self.cfg = []
+        self.tag = tag
+        self.closed = False
 
     def sample(self):
         self.n += 1
@@ -334,36 +336,105 @@ class StubSampler(object):
         return ['stub=called']
 
     def close(self):
-        pass
+        self.closed = True
 
 
 def _worker_alive(o):
     return bool(o._worker is not None and o._worker.is_alive())
 
 
+MADE = []
+
+
+def install_stub(o, factory=None):
+    """把采样器工厂换成桩：记录每条线程自己创建的那个实例。"""
+    made = []
+
+    def make(cfg):
+        s = StubSampler(tag='s%d' % (len(made) + 1))
+        made.append(s)
+        if factory is not None:
+            factory(s)
+        return s
+    o._make_sampler = make
+    return made
+
+
 o6 = make_ov()
 o6._u = FakeU2()
 o6._interval = 200
-o6._sampler = StubSampler()
+made6 = install_stub(o6)
 o6._pending_sampler_cfg = {'gpu_clock': True, 'gpu_select': 'auto',
                            'gpu_luid': ''}
 o6._start_worker()
 time.sleep(0.3)
-check(_worker_alive(o6) and o6._sampler.n >= 1,
+check(_worker_alive(o6) and made6 and made6[0].n >= 1,
       '采样线程起来并产出读数（窗口线程不参与采样）')
 o6._apply_paused(True)
 check(o6._paused is True and not _worker_alive(o6),
       '暂停 -> 采样线程退出')
-n = o6._sampler.n
+n = made6[0].n
 time.sleep(0.3)
-check(o6._sampler.n == n, '暂停期间不再采样')
+check(made6[0].n == n, '暂停期间不再采样')
+check(made6[0].closed, '采样器由自己的线程关闭（暂停后句柄已释放）')
 o6._apply_paused(False)
 time.sleep(0.3)
-check(o6._paused is False and _worker_alive(o6) and o6._sampler.n > n,
+check(o6._paused is False and _worker_alive(o6) and made6[-1].n >= 1,
       '恢复 -> 重新起采样线程并继续采样')
-check([c for c in o6._sampler.cfg if c[0] == 'clock'],
+check(len(made6) == 2 and made6[0] is not made6[1],
+      '恢复时新建采样器（不与上一条线程共用句柄）')
+check([c for c in made6[-1].cfg if c[0] == 'clock'],
       '采样器配置在采样线程里应用（GPU 频率开关）')
 o6._stop_worker()
+
+print('[D2] v1.6.1 回归：旧采样线程卡住时禁止起第二条线程')
+
+
+class StuckSampler(StubSampler):
+    """sample() 卡住不返回，模拟驱动调用/PDH 卡死。"""
+
+    def __init__(self, gate, tag=''):
+        StubSampler.__init__(self, tag)
+        self.gate = gate
+        self.entered = False
+
+    def sample(self):
+        self.entered = True
+        self.gate.wait(2.0)
+        return StubSampler.sample(self)
+
+
+gate = __import__('threading').Event()
+o8 = make_ov()
+o8._u = FakeU2()
+o8._interval = 200
+made8 = []
+o8._make_sampler = lambda cfg: (made8.append(StuckSampler(gate, 'stuck'))
+                                or made8[-1])
+o8._start_worker()
+for _ in range(40):
+    if made8 and made8[0].entered:
+        break
+    time.sleep(0.05)
+check(bool(made8 and made8[0].entered), '第一线程已卡在采样里')
+o8._stop_worker(timeout=0.2)
+check(_worker_alive(o8) and o8._sampler_state == 'orphan',
+      '卡住的线程被标为 orphan（引用保留，不丢线程）')
+check(o8._start_worker({'gpu_clock': False, 'gpu_select': 'auto',
+                        'gpu_luid': ''}) is False,
+      '旧线程未退出 -> 拒绝起新采样线程')
+check(len(made8) == 1 and o8._restart_pending is True,
+      '拒绝期间不新建采样器（无句柄共享）')
+gate.set()
+time.sleep(0.4)
+check(not _worker_alive(o8), '放行后旧线程自行退出')
+check(made8[0].closed, '旧线程退出时关掉自己的采样器')
+check(o8._start_worker({'gpu_clock': False, 'gpu_select': 'auto',
+                        'gpu_luid': ''}) is True,
+      '旧线程退出后才允许新建采样器')
+check(len(made8) == 2 and made8[1] is not made8[0] and not made8[1].closed,
+      '第二条线程拿到的是全新采样器（旧的那个已关闭）')
+o8._stop_worker()
 
 print('[E] v1.6.0 节拍改动即时生效（FakeU，不建真实窗口）')
 
@@ -800,7 +871,7 @@ o11._apply_menu(ov_mod.M_GPU_BASE)
 check(o11._prefs['gpu_select'] == 'auto' and o11._prefs['gpu_luid'] == '',
       '适配器表为空时不改偏好（防越界写入错误 LUID）')
 
-o11._sampler = StubSampler()
+o11._backend_lines = ['stub=called']
 o11._slow_events = 2
 o11._apply_menu(ov_mod.M_DIAG)
 _diag = [r['msg'] for r in REQS if r.get('action') == 'log']

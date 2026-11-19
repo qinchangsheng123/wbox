@@ -244,11 +244,40 @@ class PopupGuard(object):
         # arm() 是"游戏刚全部退出"的时点，紧接着就要打印这个数，先清再打印
         # 会让「本局提前拦截 N 次」永远显示 0（2026-11-12 真机日志证实）。
         self.session_early = 0
+        # v2.13.0：观察模式 + 最近动作记录（审查项 8 / 弹窗建议）
+        # observe_only=True 时只判定、只记录，不发 WM_CLOSE、不结束进程。
+        self.observe_only = bool(self.cfg.get('observe_only', False))
+        self.records = []          # 最近 20 条动作（进程名/标题/pid/规则/结果）
+        self.record_seq = 0        # 变化计数，插件据此决定是否落盘
         self._path_cache = {}      # 单轮扫描内的 pid -> 路径（每轮清空，防 pid 复用）
 
     # ---------- 开关 ----------
     def enabled(self):
         return bool(self.cfg.get('enabled', False))
+
+    def _record(self, action, pid, exe, title, rule, note=''):
+        """记一条弹窗动作（观察模式与真实关闭共用一份口径）。"""
+        rec = {'ts': round(time.time(), 3), 'action': action,
+               'pid': int(pid or 0), 'exe': (exe or '')[:64],
+               'title': (title or '')[:80], 'rule': (rule or '')[:64],
+               'note': (note or '')[:120]}
+        self.records.append(rec)
+        if len(self.records) > 20:
+            del self.records[:-20]
+        self.record_seq += 1
+        try:
+            import events
+            if action == 'observe':
+                events.emit('popup', code='WINDOW_OBSERVED', pid=rec['pid'],
+                            rule=rec['rule'],
+                            msg='观察模式：本应关闭 %s %r（%s）'
+                                % (rec['exe'], rec['title'], rec['rule']))
+            else:
+                events.emit('popup', code=action.upper(), pid=rec['pid'],
+                            rule=rec['rule'],
+                            msg='%s %r %s' % (rec['exe'], rec['title'], note or ''))
+        except Exception:
+            pass
 
     def begin_session(self):
         """新一局游戏开始：清零本局提前拦截计数。
@@ -429,6 +458,10 @@ class PopupGuard(object):
 
         done = 0
         for pid, exe, path in roots:
+            if self.observe_only:
+                self._record('observe', pid, exe, '', why,
+                             '观察模式：本应结束宿主进程树（未结束）')
+                continue
             # 后序收集：先叶子后根，避免父进程先死导致子进程变孤儿
             order = []
 
@@ -461,6 +494,8 @@ class PopupGuard(object):
                 root_ok, _note = kill_process(order[-1])
             if root_ok or sub_ok:
                 done += 1
+                self._record('host_killed', pid, exe, '', why,
+                             '子进程 %d，%s' % (sub_ok, path))
                 self.killed.append((pid, exe))
                 self.log('%s：结束弹窗宿主 %s (pid %d) 及 %d 个子进程 —— %s' %
                          (why, exe, pid, sub_ok, path))
@@ -529,10 +564,17 @@ class PopupGuard(object):
                         self.log('提前拦截：WM_CLOSE 连发 %d 次窗口仍在 (pid %d)，'
                                  '等游戏退干净后由进程树清理兜底' % (tried, pid))
                     continue
+                if self.observe_only:
+                    self._record('observe', pid, exe, title, 'early',
+                                 '游戏会话中命中提前拦截规则（未关闭）')
+                    self.early_attempts[hwnd] = max_tries
+                    self.handled.add(hwnd)
+                    continue
                 self.early_attempts[hwnd] = tried + 1
                 ok, note = close_window(hwnd)
                 if ok:
                     done += 1
+                    self._record('window_closed', pid, exe, title, 'early', note)
                     self.session_early += 1
                     if hwnd not in self.early_logged:
                         self.early_logged.add(hwnd)
@@ -606,10 +648,18 @@ class PopupGuard(object):
             if not (hit_proc or hit_kw):
                 continue
 
+            reason = 'proc' if hit_proc else 'kw'
+            if self.observe_only:
+                self.handled.add(hwnd)
+                self.seen += 1
+                self._record('observe', pid, name, title, reason,
+                             '观察模式（未关闭）')
+                continue
             ok, note = close_window(hwnd)
             self.handled.add(hwnd)
             if ok:
                 self.closed += 1
+                self._record('window_closed', pid, name, title, reason, note)
                 self.log('已关闭弹窗：%s (pid %d) 标题=%r —— %s' %
                          (name or '?', pid, (title or '')[:40], note))
             else:

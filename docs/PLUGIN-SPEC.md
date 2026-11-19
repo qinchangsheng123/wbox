@@ -1,13 +1,16 @@
 # WBOX 插件开发规范
 
-适用版本：**WBOX v2.12.2**，插件 API 版本 **`API_VERSION = 1`**
+适用版本：**WBOX v2.13.0**，插件 API 版本 **`API_VERSION = 1`**
 文档状态：与 `src/plugin_api.py`、`src/plugin_host.py`、`src/plugin_package.py`、
 `src/guard_core.py` 的实际行为逐条对齐（2026-11-17 校对，2026-11-18 同步
 v2.11.0 系统标识全量改名；同日 v2.11.3 补 `publisher` / `homepage` /
 `permissions` 三个展示字段与 `.sha256` 侧车校验；2026-11-19 v2.12.0 只动
 面板外观——窗口大小三档与插件设置里的版本展示；v2.12.1 继续只动面板外观——
 极简档行尾版本小字、方角开关与行内 30 px 设置项；v2.12.2 极简档字标不再兼作
-设置入口（右上角「设置」是唯一入口）并修托盘图标自愈，**API 与包格式不变**）。
+设置入口（右上角「设置」是唯一入口）并修托盘图标自愈；v2.13.0 稳定性审查落地：
+钩子耗时监测与卡顿降级（§5.6）、`ctx.spawn` 异步契约（§4.1 / §5.6）、
+`events` 进 `import_core` 白名单（§4.2）、结构化事件流与诊断包（§9.6）、
+配置统一校验与迁移留痕——**API_VERSION 与包格式不变，新增均为向后兼容扩展**）。
 面板操作说明按 WBOX 界面写成：玻璃档标题栏字标是
 **WBOX**（菜单入口）；极简档右上角「设置」是入口，字标只作标识。v2.11.0 起系统标识（exe、安装目录、计划任务、注册表键、管道/互斥体、
 备份目录）也统一 WBOX——旧 Wingman 安装由安装器自动迁移。
@@ -365,6 +368,7 @@ v2.11.3 起安装框把可判断的东西摆出来（**都是线索，不是担�
 | `ctx.import_core(name)` | 取内核低层库 | 未知名字抛 `KeyError` | 见 §4.2 |
 | `ctx.request_fast_poll(until)` | 登记"到 `until` 之前我要 0.4 秒快节拍" | — | 内核取所有插件的最大值 |
 | `ctx.retry_close(delay=2.0)` | **仅 `on_session_close` 内有效**：把会话从"即将 idle"拉回 grace | 返回 `bool` | 其它钩子里调用返回 `False` |
+| `ctx.spawn(fn, *args, name='', **kwargs)` | 在后台守护线程里跑可能阻塞的活，立即返回 `threading.Thread` | `fn` 不可调用抛 `TypeError` | 后台异常由宿主捕获写日志/事件流；**必须异步的操作见 §5.6** |
 | `ctx.write_state(name, obj)` | 原子写 `data\<name>.json`（`tmp` + `os.replace`） | 抛 `OSError` | `name` 不能含路径分隔符，自动补 `.json` |
 | `ctx.read_state(name, default=None)` | 读 `data\<name>.json` | 文件缺失/损坏返回 `default` | |
 | `ctx.set_status(text, level='ok')` | 面板菜单里该插件行右侧的一行摘要 | — | `level` 当前只记录不参与渲染 |
@@ -376,7 +380,7 @@ core = self.ctx.import_core('guard_core')
 core.run_hidden([core.TASKKILL, '/PID', str(pid), '/F'])
 ```
 
-白名单只有六个（`plugin_host.CORE_MODULES`）：
+白名单只有七个（`plugin_host.CORE_MODULES`）：
 
 | 名字 | 里面有什么 | 典型用途 |
 | --- | --- | --- |
@@ -386,6 +390,7 @@ core.run_hidden([core.TASKKILL, '/PID', str(pid), '/F'])
 | `game_lib` | Steam / Epic / WeGame / GOG / Ubisoft 库扫描 | 找游戏目录 |
 | `core_defaults` | 内核默认值常量（`DEFAULTS` / `ACE_CLEANUP_DEFAULTS` / …） | 读安全默认值 |
 | `plugin_api` | 本模块自身 | 取 `SessionView`、常量 |
+| `events` | 结构化事件流 `emit(cat, code=..., plugin=..., pid=..., dur_ms=..., msg=...)`（v2.13.0） | 写决策/动作类诊断事件（§9.6），永不抛异常 |
 
 取进程表**不要**调内核的 `Guard.read_procs`（它是守护实例的方法，插件拿不到），
 用 `ctx.procs()` / `ctx.snapshot()`。
@@ -510,6 +515,44 @@ def on_config(self, cfg):
 
 **不要**指望在这里看到 `game_processes` 之类内核键——即使写了也读不到。
 要读内核键用 `ctx.cfg('game_processes')`（读是允许的，写不允许）。
+
+### 5.6 钩子耗时监测与 `ctx.spawn`（v2.13.0）
+
+宿主用 `perf_counter` 给**每次钩子调用**计时，统计进 `plugins_state.json`
+（`slow_hook` / `slow_sec` / `slow_count`）：
+
+- 单次超过 **5 秒**告警线：写一行日志 + 一条 `plugin.hook / HOOK_SLOW` 事件；
+- 同一插件**连续 3 次**超线：状态降级为 `degraded`，面板点名是哪个钩子、
+  耗时多少（插件是完全信任代码，宿主没法抢占它，但必须让用户看见
+  "守护为什么变慢"）；
+- 之后任何一次钩子在告警线内完成，状态恢复 `ok`；
+- 耗时统计只保留最近 30 分钟内的慢事件，旧峰值不会长期挂着误导排查。
+
+**必须异步的操作**（在 `on_tick` 里一律走 `ctx.spawn(...)`，钩子立即返回）：
+
+| 操作 | 典型耗时 | 为什么要异步 |
+| --- | --- | --- |
+| `ctx.snapshot()` / `ctx.procs()` 之外的全表轮询 | 5~50ms | 进程多时线性增长 |
+| 关闭进程、等待退出（WM_CLOSE / taskkill / 句柄等待） | 0.3~6s | 会占满 close_wait 期限 |
+| 启动外部程序（Popen / ShellExecute） | 10ms~数秒 | 冷启动受杀软/磁盘影响 |
+| 驱动/PDH/DXGI/ADL 查询 | 10ms~数秒 | 驱动卡住是常见故障 |
+| 读写大文件、注册表全量枚举、`icacls`/PowerShell | 10ms~1s | 冷启动抖动大 |
+
+```python
+def on_tick(self, tick):
+    if self._need_close:
+        self._need_close = False
+        self.ctx.spawn(self._close_worker, name='close-afterburner')
+
+def _close_worker(self):
+    # 真正的 WM_CLOSE / 等待 / 强杀在这里做；异常由宿主捕获，不会带走守护
+    ...
+```
+
+例外：`on_session_close` 这类"必须在本轮决定是否重试"的钩子仍要**同步判断**
+（快照失败就 `ctx.retry_close`），但真正的关闭动作可以交给后台线程。
+`ctx.spawn` 的后台线程是 daemon 线程，守护退出时不等待它们收尾——需要
+落盘的状态请在动作完成后立即写，不要攒到线程最后。
 
 ---
 
@@ -742,6 +785,32 @@ powershell -NoProfile -Command "Get-Content 'C:\Program Files\WBOX\guard.log' -T
 ```
 
 改 `plugin.json` 一定要重新触发重载（manifest 只在加载期读一次）。
+
+### 9.6 结构化事件流与诊断包（v2.13.0）
+
+`guard.log` 之外，守护把关键事件按行写进 `events.jsonl`（JSONL，1 MB 轮转
+保留一代），字段固定：`ts / ver / cat / code / plugin / pid / session /
+dur_ms / msg`。内核已写的事件：启动、配置加载/校验/迁移、会话迁移、
+钩子慢/异常、弹窗动作、ACE 决策。插件也可以写：
+
+```python
+ev = self.ctx.import_core('events')
+ev.emit('ace', code='CLEAN', msg='四道闸门全过', action='terminate',
+        pid=1234, dur_ms=850)
+```
+
+`emit` **永不抛异常**、未启用时静默丢弃，可以放心放在任何路径上。
+
+排查问题时让用户导出诊断包：齿轮菜单「导出诊断」，或
+
+```bat
+"C:\Program Files\WBOX\WBOX.exe" --diag
+```
+
+得到一个 zip：`meta.json`（版本/时间/插件清单）+ `guard.log` + `events.jsonl`
++ 崩溃日志 + `plugins_state.json` + `config.json` + 各插件 `data\*.json`。
+按 `cat` / `code` / `plugin` 过滤 `events.jsonl` 即可回答"哪个插件拖慢了守护"
+"ACE 这一轮为什么没清""弹窗是被哪条规则关的"。
 
 ---
 
