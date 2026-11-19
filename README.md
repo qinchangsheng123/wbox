@@ -57,7 +57,8 @@ Setup_WBOX.exe /S /DIR="D:\Tools\WBOX" /AUTO=1 /LAUNCH=1
 
 - 主页每行一个插件功能开关；行尾滑块打开设置浮层，「卸载此插件」在浮层底部
 - 菜单：守护状态 / 启动 / 停止守护、开机自启、启动后收进托盘、游戏结束提示、
-  重新扫描游戏、查看日志、编辑配置文件、外观与皮肤…、插件开发指南等
+  重新扫描游戏、查看日志、编辑配置文件、外观与皮肤…（皮肤 / 明暗 / 窗口大小）、
+  插件开发指南等
 - 守护状态：看当前 pid、会话状态、只读提示
 
 装到 `Program Files` 时普通权限写不了配置，程序会自动提权重开一次；
@@ -188,6 +189,7 @@ python test\test_gamepp_plugin.py
 python test\test_plugin_actions.py
 python test\test_setup_gui.py
 python test\test_skin_panel.py
+python test\test_ui_size.py
 python test\test_tray_live.py
 python test\test_ui_copy_keyboard.py
 python test\test_ui_motion.py
@@ -195,6 +197,23 @@ python test\test_qa_*.py
 ```
 
 ## 版本
+
+**v2.12.0**（2026-11-19）
+
+外观多了「窗口大小」，插件设置能直接读到版本，两件都是"用户自己就能核对"的小口子：
+
+- **窗口大小 小 / 中 / 大**：外观面板与极简设置页的「外观」组各加一段三档胶囊，
+  落盘 `ui_size`（`small` / `medium` / `large`，倍率 1.00 / 1.15 / 1.30）。
+  倍率乘在系统 DPI 之上，`px()` 一处生效——窗口宽高、字号、行高、图标、浮层
+  全部等比，不用给每个控件再开一套尺寸。**默认「小」就是升级前的尺寸**：
+  老配置没有 `ui_size`、值写坏、配置读不出来，一律回落 small，观感不变。
+  `layout-check` 从「两档骨架 × 六档 DPI」扩成「三档大小 × 两档骨架 × 六档 DPI」，
+  `overflow=0`、浮层全部 `in_area=True`。
+- **插件设置里能核对版本**：浮层头部原来的小灰字 `v2.1.1` 改成右侧底片胶囊
+  「版本 v2.1.1」，并补一行「插件接口 API 1 · 发布者 WBOX（· 需要管理员权限）」。
+  齿轮菜单仍只回答"能不能用"，不塞版本号（文案规范 §1 口径不变）。
+- **回归**：新增 `test\test_ui_size.py`（默认小 / 三档切换落盘 / 重开保持 /
+  明暗不冲掉大小 / 外观入口可点 / 版本胶囊文案 / 坏值回落）。
 
 **v2.11.3**（2026-11-18）
 

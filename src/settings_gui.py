@@ -80,6 +80,13 @@ TASKLIST = os.path.join(SYS32, 'tasklist.exe')
 NOWIN = 0x08000000
 BASE_W = 640                 # standard 档基准窗口宽度（逻辑像素，设计稿 640×332）
 PLAIN_W = 480                # v2.10.0：极简档收紧到 480，去掉两侧大片空白
+# 窗口大小三档（v2.12.0）。倍率乘在 DPI 缩放**之上**，px() 一处生效，
+# 窗口宽高、字号、行高、图标、浮层全部等比走。小 = 1.00 即历史尺寸，
+# 所以老配置不写 ui_size 时观感与升级前完全一致，默认就是「小」。
+UI_SIZES = (('small', '小', 1.00), ('medium', '中', 1.15),
+            ('large', '大', 1.30))
+UI_SIZE_ZOOM = {key: zoom for key, _label, zoom in UI_SIZES}
+DEFAULT_UI_SIZE = 'small'
 DPI_MODE = 'unknown'
 READONLY = False             # 配置目录不可写且无法提权时为 True：功能项全部置灰
 
@@ -186,7 +193,8 @@ def plugin_hint(entry, state=None, switch=None):
                 errs = 0
             if state.get('status') == plugin_host.STATUS_DEGRADED or errs > 0:
                 text = ('运行异常 %d 次' % errs) if errs else '运行异常'
-    # 插件版本号不进界面（文案规范 §1）：用户只需要状态，不需要 v2.0.0。
+    # 插件版本号不进**齿轮菜单**（文案规范 §1）：那里只回答"能不能用"。
+    # 要核对装的是哪一版，点开该插件的设置浮层——头部有版本胶囊（v2.12.0）。
     parts = [text]
     if isinstance(switch, bool) and entry.status in plugin_host.USABLE_STATUS:
         parts.append('已启用' if switch else '已关闭')
@@ -327,6 +335,21 @@ def save_cfg(cfg):
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     os.replace(tmp, CFG)
+
+
+def ui_size_from_cfg(cfg=None):
+    """配置里的 ui_size -> 三档之一，坏值/缺键一律回落默认「小」。
+
+    读配置失败不能拦住面板启动：外观是纯展示偏好，拿不到就当默认，
+    和 skins.resolve() 对坏皮肤的处理口径一致。
+    """
+    if not isinstance(cfg, dict):
+        try:
+            cfg = load_cfg()
+        except Exception:
+            cfg = {}
+    key = str(cfg.get('ui_size') or '').strip().lower()
+    return key if key in UI_SIZE_ZOOM else DEFAULT_UI_SIZE
 
 
 def is_admin():
@@ -1345,6 +1368,10 @@ class App(object):
         # 计划任务 / 注册表键 / 管道 / mutex / 备份目录）；旧 Wingman 安装
         # 由安装器 migrate_legacy 迁移，面板只认新标识。
         root.title('WBOX')
+        # 窗口大小必须在 apply_scaling 之前定：px() 的倍率由它带进来，
+        # 晚一步，第一版控件就按旧尺寸画出来，要等下一次 rebuild 才对齐。
+        self.ui_size = ui_size_from_cfg()
+        self.ui_zoom = UI_SIZE_ZOOM[self.ui_size]
         self.apply_scaling()
 
         self.family = pick_family(root)
@@ -1466,7 +1493,10 @@ class App(object):
         return max(1, int(round(value * self.scale)))
 
     def apply_scaling(self):
-        self.scale = self.dpi / 96.0
+        # 两个倍率相乘：系统 DPI × 用户选的窗口大小。tk scaling 只跟 DPI 走，
+        # 不乘窗口大小——所有字号都是像素负值（-px(n)），已经由 px() 放大过；
+        # 再乘一次 tk scaling 会让 Tk 内部按点计的默认度量二次放大。
+        self.scale = self.dpi / 96.0 * getattr(self, 'ui_zoom', 1.0)
         self.root.tk.call('tk', 'scaling', self.dpi / 72.0)
 
     def resize_fonts(self):
@@ -1667,6 +1697,7 @@ class App(object):
             cfg = load_cfg()
             cfg['ui_skin'] = self.skin.id
             cfg['ui_appearance'] = self.appearance_pref
+            cfg['ui_size'] = self.ui_size    # v2.12.0：小 / 中 / 大
             cfg['ui_theme'] = self.theme      # 老字段留一份快照，降级不突变
             save_cfg(cfg)
         except Exception:
@@ -1715,6 +1746,28 @@ class App(object):
             self.note('皮肤 %s 不存在，忽略切换' % skin_id)
             return
         self.apply_skin(skin, self.appearance_pref)
+
+    def set_ui_size(self, key, persist=True):
+        """窗口大小三档。px() 的结果已经烘进每个控件的像素尺寸里，换倍率
+        只能整屏重建（和换皮肤同一套路径），不能指望 configure 追得上。
+
+        persist=False 只给 layout-check 用：自检要量三档，不能顺手把
+        用户选的大小改掉、更不能往生产 config.json 里写。
+        """
+        if key not in UI_SIZE_ZOOM or key == self.ui_size:
+            return
+        self.ui_size = key
+        self.ui_zoom = UI_SIZE_ZOOM[key]
+        self.apply_scaling()
+        self.resize_fonts()
+        try:
+            self.root.minsize(self.px(430), self.px(200))
+        except Exception:
+            pass
+        # 只读模式下只在本进程内生效（save_appearance 内部已判 readonly）
+        if persist:
+            self.save_appearance()
+        self.rebuild()
 
     def rebuild(self):
         """切主题 / 改 DPI 时按新令牌重建所有控件，避免残留旧配色的方块。"""
@@ -2787,6 +2840,26 @@ class App(object):
                  lambda i=sk_.id: self.set_skin(i))
         line('从文件安装皮肤…', '', self.on_install_skin)
 
+        # v2.12.0：窗口大小三档。放在外观组里（和明暗、皮肤同一处），
+        # 选完立即按新倍率重建当前页，不用退出去再进来。
+        size_row = row_box()
+        tk.Label(size_row, text='窗口大小', bg=bg, fg=c['fg'],
+                 font=self.f_body, anchor='w', padx=pad_l).pack(
+                     side='left', fill='y')
+        size_seg = tk.Frame(size_row, bg=bg)
+        size_seg.pack(side='right', padx=pad_r)
+        for key, label, _zoom in UI_SIZES:
+            on = key == self.ui_size
+            b = tk.Label(size_seg, text=label, font=self.f_small,
+                         padx=self.px(8), pady=self.px(3),
+                         bg=(c['fg'] if on else c['bg']),
+                         fg=(c['bg'] if on else c['t2']), cursor='hand2')
+            b.pack(side='left', padx=(self.px(3), 0))
+            b.bind('<ButtonRelease-1>', lambda e, k=key: self.set_ui_size(k))
+            self._keyboard(b, lambda k=key: self.set_ui_size(k))
+            self._set_focusables.append(b)
+        tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
+
         group('启动与守护')
         boot_line = row_box()
         tk.Label(boot_line, text='开机自动启动', bg=bg, fg=c['fg'],
@@ -3345,6 +3418,18 @@ class App(object):
                 seg, label, lambda k=key: self.on_pick_appearance(k),
                 primary=(self.appearance_pref == key)))
             chain[-1].pack(side='left', padx=(0, self.px(6)))
+        # v2.12.0：窗口大小。三段与明暗同一种胶囊，默认「小」= 升级前的尺寸。
+        tk.Label(body, text='窗口大小', bg=c['bg'], fg=c['t3'],
+                 font=self.f_small, anchor='w').pack(
+                     fill='x', padx=self.px(14), pady=(self.px(8), 0))
+        size_seg = tk.Frame(body, bg=c['bg'])
+        size_seg.pack(fill='x', padx=self.px(14),
+                      pady=(self.px(4), self.px(6)))
+        for key, label, _zoom in UI_SIZES:
+            chain.append(self.capsule_button(
+                size_seg, label, lambda k=key: self.on_pick_ui_size(k),
+                primary=(self.ui_size == key)))
+            chain[-1].pack(side='left', padx=(0, self.px(6)))
         self.sep(body)
 
         act = tk.Frame(body, bg=c['bg'], padx=self.px(14), pady=self.px(8))
@@ -3447,6 +3532,10 @@ class App(object):
     def on_pick_appearance(self, key):
         self.set_theme(key)
         self.refresh_skin_list()
+
+    def on_pick_ui_size(self, key):
+        """点窗口大小：set_ui_size 内部重建，皮肤面板随 rebuild 一起刷新。"""
+        self.set_ui_size(key)
 
     def refresh_skin_list(self):
         """换完皮肤后重建面板内容：勾要跟着走，配色也是新的。"""
@@ -4041,13 +4130,28 @@ class App(object):
         self._setting_switches = {}
 
         head = tk.Frame(body, bg=c['bg'])
-        head.pack(fill='x', padx=self.px(14), pady=(self.px(12), self.px(10)))
+        head.pack(fill='x', padx=self.px(14), pady=(self.px(12), self.px(6)))
         Glyph(head, self, entry.icon, size=self.px(20)).pack(side='left')
         tk.Label(head, text=entry.name, bg=c['bg'], fg=c['fg'],
                  font=self.f_head).pack(side='left', padx=(self.px(10), 0))
-        # 版本号靠右（设计稿 .rp-head：名称左、版本右，等宽字体小一号）
-        tk.Label(head, text='v%s' % (entry.version or ''), bg=c['bg'],
-                 fg=c['t3'], font=self.f_small).pack(side='right')
+        # v2.12.0：版本号从「几乎看不见的小灰字」改成右侧底片胶囊，并补一行
+        # 接口 / 发布者。用户排查"功能不对"时第一件事就是核对装的是哪一版，
+        # 这行必须能一眼读到，不能靠猜。
+        ver = ('版本 v%s' % entry.version) if entry.version else '版本未知'
+        tk.Label(head, text=ver, bg=c['fill'], fg=c['t2'], font=self.f_small,
+                 padx=self.px(6), pady=self.px(1)).pack(side='right')
+        meta = []
+        if entry.api:
+            meta.append('插件接口 API %d' % entry.api)
+        if entry.publisher:
+            meta.append('发布者 %s' % entry.publisher)
+        if entry.requires_admin and not is_admin():
+            meta.append('需要管理员权限')
+        if meta:
+            tk.Label(body, text=' · '.join(meta), bg=c['bg'], fg=c['t3'],
+                     font=self.f_small, anchor='w', justify='left',
+                     wraplength=self.px(300)).pack(
+                         fill='x', padx=self.px(14), pady=(0, self.px(10)))
         self.sep(body)
 
         # 显示值一律走三段合并后的配置：面板显示「开」而守护按默认值跑「关」
@@ -4496,6 +4600,7 @@ def self_check():
         'scale=%.2f' % (dpi / 96.0),
         'work_area=%dx%d' % (wa[2], wa[3]),
         'frozen=%s' % getattr(sys, 'frozen', False),
+        'version=%s' % VERSION,
         'exe_bytes=%d' % (os.path.getsize(sys.executable) if getattr(sys, 'frozen', False) else 0),
         # 装在 Program Files 时这里通常是 False：面板要么提权，要么功能置灰
         'cfg_writable=%s' % can_write_config(),
@@ -4517,6 +4622,8 @@ def self_check():
         _skin, _appearance = skins.resolve(cfg, base=BASE)
         lines.append('skin=%s/%s perf=%s' % (
             _skin.id, _appearance, _skin.perf_label))
+        _size = ui_size_from_cfg(cfg)
+        lines.append('ui_size=%s zoom=%.2f' % (_size, UI_SIZE_ZOOM[_size]))
         lines.append('menu_style=browser_popup rows=%d' % menu_row_count(entries))
         # 注册表全景：id:状态，自检时一眼能看出哪个插件没加载起来
         lines.append('plugins=%s' % (','.join(
@@ -4584,7 +4691,9 @@ def layout_check():
 
         lx, ly, sw_area, sh_area = work_area()
 
-        def scan():
+        def scan(size):
+            # v2.12.0：窗口大小三档都要量。persist=False：自检不改用户配置。
+            app.set_ui_size(size, persist=False)
             for dpi in (96, 120, 144, 168, 192, 240):
                 app.close_settings()
                 app.apply_dpi(dpi)
@@ -4604,11 +4713,13 @@ def layout_check():
                            mx + mw <= lx + sw_area + 2 and
                            my + mh <= ly + sh_area + 2)
                 lines.append(
-                    'dpi=%-3d scale=%.2f win=%dx%d overflow=%d menu=%dx%d '
-                    'items=%dx%d moverflow=%d in_area=%s font_px=%-3d plugins=%d %s'
-                    % (dpi, dpi / 96.0, w, h, len(bad), mw, mh, iw, ih,
-                       len(ibad), in_area, app.f_body.metrics('linespace'),
-                       len(app.entries), ';'.join((bad + ibad)[:3])))
+                    'size=%s dpi=%-3d scale=%.2f win=%dx%d overflow=%d '
+                    'menu=%dx%d items=%dx%d moverflow=%d in_area=%s '
+                    'font_px=%-3d plugins=%d %s'
+                    % (size, dpi, dpi / 96.0 * app.ui_zoom, w, h, len(bad),
+                       mw, mh, iw, ih, len(ibad), in_area,
+                       app.f_body.metrics('linespace'), len(app.entries),
+                       ';'.join((bad + ibad)[:3])))
                 for e in app.entries:
                     if e.status != plugin_host.STATUS_OK or not e.settings:
                         continue
@@ -4618,14 +4729,15 @@ def layout_check():
                     ph = app.plugin_win.winfo_height()
                     need = app.plugin_body.winfo_reqheight() + 2
                     _, _, pbad = overflow(app.plugin_body)
-                    lines.append('plugin_settings=%s dpi=%d items=%d need=%d '
-                                 'win_h=%d clipped=%s overflow=%d'
-                                 % (e.id, dpi, len(e.settings), need, ph,
+                    lines.append('plugin_settings=%s size=%s dpi=%d items=%d '
+                                 'need=%d win_h=%d clipped=%s overflow=%d'
+                                 % (e.id, size, dpi, len(e.settings), need, ph,
                                     need > ph + 2, len(pbad)))
                     app.close_plugin_settings()
 
         lines.append('pass skin=%s' % app.skin.id)
-        scan()
+        for _size in tuple(k for k, _l, _z in UI_SIZES):
+            scan(_size)
         # v2.10.0 内置只有极简档；standard 骨架（第三方皮肤仍走）也要量：
         # 换一枚临时 standard 皮肤再扫一遍，persist=False 不写生产配置。
         if app.skin.performance != 'standard':
@@ -4641,7 +4753,8 @@ def layout_check():
                 'light': tok})
             app.apply_skin(std, persist=False)
             lines.append('pass skin=layout-std')
-            scan()
+            for _size in tuple(k for k, _l, _z in UI_SIZES):
+                scan(_size)
         app.close_settings()
         root.destroy()
     except Exception as e:

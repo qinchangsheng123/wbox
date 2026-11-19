@@ -1,10 +1,12 @@
 # WBOX 插件开发规范
 
-适用版本：**WBOX v2.11.3**，插件 API 版本 **`API_VERSION = 1`**
+适用版本：**WBOX v2.12.0**，插件 API 版本 **`API_VERSION = 1`**
 文档状态：与 `src/plugin_api.py`、`src/plugin_host.py`、`src/plugin_package.py`、
 `src/guard_core.py` 的实际行为逐条对齐（2026-11-17 校对，2026-11-18 同步
 v2.11.0 系统标识全量改名；同日 v2.11.3 补 `publisher` / `homepage` /
-`permissions` 三个展示字段与 `.sha256` 侧车校验）。面板操作说明按 WBOX 界面写成：标题栏字标是
+`permissions` 三个展示字段与 `.sha256` 侧车校验；2026-11-19 v2.12.0 只动
+面板外观——窗口大小三档与插件设置里的版本展示，**API 与包格式不变**）。
+面板操作说明按 WBOX 界面写成：标题栏字标是
 **WBOX**；v2.11.0 起系统标识（exe、安装目录、计划任务、注册表键、管道/互斥体、
 备份目录）也统一 WBOX——旧 Wingman 安装由安装器自动迁移。
 
