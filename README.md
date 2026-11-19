@@ -1,46 +1,73 @@
 # WBOX
 
-Windows 游戏辅助守护：开游戏自动拉起 MSI Afterburner，压住反作弊组件的资源占用，
-顺手关掉游戏退出后弹出的广告窗口。常驻托盘，只做进程调度，不碰任何游戏或反作弊文件。
+Windows 游戏伴侣守护：开游戏自动拉起监控 / 超频软件，压住反作弊组件的资源占用，
+关掉游戏退出后弹出的广告窗口，桌面上常驻一块硬件占用悬浮窗。
+常驻托盘，只做进程调度与系统指标读取，**不注入、不改任何游戏或反作弊文件**。
 
-> 显示名自 v2.10.0 起统一为 **WBOX**（原「僚机 Wingman」）；v2.11.0 起系统标识
-> （exe 文件名、安装目录、计划任务、注册表键、心跳管道/互斥体、备份区）也
-> 统一 WBOX，旧 Wingman 安装由安装器自动迁移。
+当前版本 **v2.13.0**。原「僚机 Wingman」自 v2.10.0 起更名 WBOX，旧安装由安装器自动迁移。
 
-## 它做三件事
+## 架构：内核 + 插件
 
-**1. 小飞机关联启动**
-检测到游戏进程就让 MSI Afterburner 起来，游戏全部退出后按配置优雅关闭（托盘化不退出时强制结束），
-连同 RTSS 及其 EncoderServer / HooksLoader 一起清干净。
+WBOX 本体是一个小内核，功能全部由插件提供：
 
-**2. ACE 限速**
-把 `SGuard64` / `SGuardSvc64` / `ACE-Service64` 的 CPU 优先级降到空闲、磁盘 IO 降到 very-low，
-改完读回校验。退出后按四道闸门决定是否停掉残留服务：
+- **会话状态机**：`idle → active → grace → idle`。检测到游戏进程开局，全部退出后
+  进入宽限期再收尾。进程检测默认走 WMI 事件驱动（启动/退出即时响应），轮询只做
+  低频兜底，空闲 CPU 约 0.05%。
+- **插件宿主**：每个插件声明自己的开关、设置项、权限；单插件故障自动隔离
+  （降级 + 降频），坏插件不拖垮守护；v2.13.0 起钩子超时还会被监控和隔离（见下）。
+- **守护 ↔ 面板心跳**：命名管道实时上报 pid / 版本 / 会话 / 插件状态 / 事件通道健康度，
+  面板不靠猜。
+- **主程序不带任何插件**（v2.11.3 起）：装好是一个空面板，五个官方插件在
+  [wbox-plugins](https://github.com/qinchangsheng123/wbox-plugins) 仓库单独下载、
+  单独发版，面板里「＋」一键安装、2 秒内热重载。
 
-| 闸门 | 默认值 | 作用 |
-|---|---|---|
-| 宽限期 | 180 秒 | 游戏退出后先等等，防止切局误判 |
-| ACE 保护期 | 300 秒 | 刚启动的 ACE 不动，避免打断初始化 |
-| 更新后静默 | 30 秒 | 见到 `SGuardUpdate64` 就跳过本轮 |
-| 冷却期 | 600 秒 | 两次清理之间的最小间隔 |
+## 功能（官方插件）
 
-**3. 弹窗拦截**
-游戏会话中一旦出现 `ClientBrowser.exe` 的窗口，立刻发 WM_CLOSE，不等游戏进程完全退出；
-全部退出后清理宿主进程树，并在随后 90 秒内继续拦截复活的新窗口。
-QQ / 微信 / TIM 等常驻进程在保护名单里，不会被误伤。
+| 插件 | 版本 | 干什么 | 下载 |
+|---|---|---|---|
+| `afterburner` 小飞机联动 | 2.2.0 | 开游戏自动拉起 MSI Afterburner / RTSS，退出后只关本局新起的；可设关闭倒计时 | [zip][r-ab] |
+| `gamepp` 游戏加加联动 | 1.2.0 | 开游戏拉起游戏加加，退出后只关本局新起的；路径自动探测；可设关闭倒计时 | [zip][r-gp] |
+| `ace` ACE 防护 | 2.2.0 | 游戏期间压低反作弊进程 CPU / 磁盘占用，退出后按四道闸门清残留；判定留决策记录 | [zip][r-ace] |
+| `popup` 弹窗关闭 | 2.1.0 | 会话中提前关 ClientBrowser 直播 / 广告弹窗，退出后清宿主进程树；观察模式只记录不动手 | [zip][r-pop] |
+| `desktop_hud` 桌面监控 | 1.6.1 | 桌面半透明悬浮窗：CPU / GPU / 显存 / 内存占用与频率，游戏中自动隐藏 | [zip][r-hud] |
+
+每个插件的详细说明（工作原理、全部设置项、安全边界、排查方法）见
+[插件仓库 README](https://github.com/qinchangsheng123/wbox-plugins#插件详解)。
+
+[r-ab]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/afterburner-v2.2.0
+[r-gp]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/gamepp-v1.2.0
+[r-ace]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/ace-v2.2.0
+[r-pop]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/popup-v2.1.0
+[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.6.1
+
+## 可靠性设计（v2.13.0）
+
+- **进程身份校验**：关任何进程前用「pid + 创建时刻」双确认。Windows 会复用退出
+  进程的 pid，只按 pid 关会误伤用户后来自己开的同名程序；拿不到创建时间的一律
+  不动（宁可不关，不能关错）。小飞机 / 游戏加加 / ACE / 弹窗四条链路同一口径。
+- **钩子耗时监控 + 卡死隔离**：每个插件钩子计时，超 5 秒记警告，连续 3 次慢钩子
+  把该插件降级隔离（面板可见、可一键恢复）；插件可用 `ctx.spawn()` 把耗时操作
+  丢到异步线程，不阻塞守护主循环。
+- **配置统一校验**：声明式 schema，非法值自动修正或回退默认，每次修正留痕到
+  `config_issues.json`；面板与守护用同一套规则，不会「面板显示开、守护实际关」。
+- **配置迁移可见可回滚**：升级合并配置前自动备份（`config.json.bak*`），迁移写日志。
+- **安装事务**：安装 / 升级 / 卸载中断后可恢复（事务状态在 `%ProgramData%\WBOX`），
+  不留半装状态；插件安装同样有事务日志 + 启动自愈。
+- **结构化事件流 + 导出诊断**：关键动作写 `events.jsonl`（JSONL、1 MB 轮转、
+  写入永不抛错）；齿轮菜单「导出诊断」或 `WBOX.exe --diag` 一键打包
+  日志 / 事件 / 配置 / 插件状态成 zip，报问题直接甩这个包。
 
 ## 安装
 
 1. 从 [Releases](https://github.com/qinchangsheng123/wbox/releases/latest) 下载
-   `Setup_WBOX_v<版本>.exe`（同目录有 `.sha256` 侧车）
-2. 双击安装，默认装到 `C:\Program Files\WBOX`
-3. 首次运行会请求管理员权限（改进程优先级、注册计划任务都需要）
+   `Setup_WBOX_v<版本>.exe`（旁边有 `.sha256` 侧车，`sha256sum -c` 可校验）；
+2. 双击安装，默认装到 `C:\Program Files\WBOX`；
+3. 首次运行请求管理员权限（改进程优先级、注册计划任务需要）。
 
-装完安装目录里带完整开发资料：`docs\PLUGIN-SPEC.md`（插件规范）、
-`docs\插件开发指南.html`（自包含单页，离线双击可读）、`docs\plugin-template\`
-（改名即用的最小插件）。
+覆盖升级会**逐键保留你的配置**、原样保留已装插件；卸载会把插件备份到
+`%LOCALAPPDATA%\WBOX\removed-plugins-<时间戳>\`，不硬删。
 
-支持静默安装：
+静默 / 批量部署：
 
 ```
 Setup_WBOX.exe /S /DIR="D:\Tools\WBOX" /AUTO=1 /LAUNCH=1
@@ -48,29 +75,81 @@ Setup_WBOX.exe /S /DIR="D:\Tools\WBOX" /AUTO=1 /LAUNCH=1
 
 | 参数 | 说明 |
 |---|---|
-| `/S` | 静默 |
-| `/DIR=` | 安装目录 |
-| `/AUTO=1` | 开机自启（登录时计划任务） |
-| `/LAUNCH=1` | 装完立即启动守护 |
-| `/NOTASK` | 不创建计划任务 |
-| `/UNINSTALL` | 走卸载流程（**卸载必须带这个参数**） |
+| `/S` | 静默，无界面 |
+| `/DIR=路径` | 安装目录（默认 `C:\Program Files\WBOX`） |
+| `/AUTO=1\|0` | 开机自启（登录时计划任务，默认 1） |
+| `/LAUNCH=1\|0` | 装完立即启动守护（默认 0） |
+| `/TASK=名称` | 覆盖计划任务名（默认 `WBOX`，多套并存时用） |
+| `/NOTASK` | 完全不碰计划任务（调试用） |
+| `/uninstall` | 卸载；`/DIR`、`/TASK` 要跟安装时一致 |
+
+装完安装目录里带完整开发资料：`docs\PLUGIN-SPEC.md`（插件规范）、
+`docs\插件开发指南.html`（自包含单页，离线双击可读）、`docs\plugin-template\`
+（改名即用的最小插件）。
 
 ## 使用
 
-窗口左上角字标 **WBOX** 是玻璃皮肤的菜单入口；极简皮肤右上角直接有「设置」，
-字标只作标识（同一件事不挂两个入口）。开启「启动后收进托盘」后，关窗收进托盘，
-托盘左键叫回窗口、右键菜单「打开设置 / 退出」：
+面板内置「极简」皮肤（方角纯色、480 逻辑像素宽），明暗跟随系统，窗口大小三档。
+左上角字标 WBOX 可拖动窗口；极简档右上角「设置」进设置页，玻璃档字标即菜单入口。
+开启「启动后收进托盘」后关窗收进托盘（图标自愈：explorer 重启 / 首挂失败都会自动补挂），
+托盘左键叫回窗口、右键「打开设置 / 退出」。
 
-- 主页每行一个插件功能开关；行尾滑块打开设置浮层，「卸载此插件」在浮层底部
-- 菜单：守护状态 / 启动 / 停止守护、开机自启、启动后收进托盘、游戏结束提示、
-  重新扫描游戏、查看日志、编辑配置文件、外观与皮肤…（皮肤 / 明暗 / 窗口大小）、
-  插件开发指南等
-- 守护状态：看当前 pid、会话状态、只读提示
+- 主页每行一个插件功能开关，改动即时写盘、守护 2 秒内热加载；
+- 行尾滑块打开设置浮层：插件自己的设置项、版本 / 发布者 / 权限、「卸载此插件」；
+- 齿轮菜单：守护状态 / 启停、开机自启、收进托盘、游戏结束提示、重扫游戏库、
+  查看日志、**导出诊断**、编辑配置文件、外观与皮肤、浏览插件库、插件开发指南；
+- 「已安装插件」分组显示版本与状态（正常 / 运行异常 N 次 / 加载失败 /
+  需要更新的内核 / ID 冲突；钩子卡顿降级也计入「运行异常」）。
+
+日志与运行数据都在安装目录：
+
+| 文件 | 内容 |
+|---|---|
+| `guard.log` | 逐行运行日志（时间戳），超上限自动轮转 |
+| `events.jsonl` | 结构化事件流（配置加载 / 会话 / 插件动作 / ACE 判定…） |
+| `config.json` | 用户配置（升级逐键保留） |
+| `config_issues.json` | 最近一次配置校验的修正记录（没有问题就没有这个文件） |
+| `plugins_state.json` | 各插件落盘状态（如弹窗最近动作 `popup_recent`） |
 
 装到 `Program Files` 时普通权限写不了配置，程序会自动提权重开一次；
-用户拒绝 UAC 时界面整体置灰，不会崩。
+拒绝 UAC 时界面整体置灰并说明原因，不会崩。
 
-日志在安装目录的 `guard.log`，按 `YYYY-MM-DD HH:MM:SS` 逐行记录，单文件超过上限自动轮转。
+## 插件
+
+> **插件仓库：<https://github.com/qinchangsheng123/wbox-plugins>**
+> **下载页：<https://github.com/qinchangsheng123/wbox-plugins/releases>**（每个插件一个 Release，带 `.sha256`）
+
+- **加插件**：下载 `<id>-v<版本>.zip`（不用解压），点标题栏「＋」选中它。
+  安装前弹来源确认：发布者、声明权限翻成人话、文件数、整包 SHA-256；
+  校验通过后自动生效（游戏会话中会等本局结束，不打断限速 / 弹窗监视）。
+- **删插件**：设置浮层底部「卸载此插件」，目录移进备份区，面板那一行随之消失。
+- 升级安装原样保留已装插件；覆盖安装旧版插件先备份到
+  `%LOCALAPPDATA%\WBOX\replaced-plugins-<时间戳>\`。
+
+### 插件包规范 `wbox-plugin-zip-v1`
+
+zip 分发，顶层目录名必须等于 `manifest.id`：
+
+```
+<id>-vX.Y.Z.zip
+  └─ <id>/plugin.json       必填：id / name / version / api（≤ 1）
+     <id>/plugin.py         默认入口，可用 manifest.entry 改
+     <id>/...               其它源码 / 说明 / 小图标
+```
+
+- 允许 `.py .json .md .txt .cfg .ini .yaml .yml .csv .xml .png .ico`；
+  可执行文件（`.exe/.dll/.pyd/.bat/.cmd/.ps1/.vbs/.lnk` 等）一律拒绝；
+- 拒绝多顶层目录、路径穿越、绝对路径、符号链接、加密条目、zip bomb
+  （文件数 ≤ 64、单文件 ≤ 1 MB、解压总量 ≤ 2 MB、包 ≤ 8 MB）；
+- 先只读 `inspect_zip()`，落盘暂存后再走一遍宿主 `parse_manifest()`，
+  任何失败不留半成品；`.sha256` 侧车存在且不一致时拒绝安装。
+
+完整规范见 `docs/PLUGIN-SPEC.md`（含钩子耗时约定 §5.6、事件流 §9.6）；
+打包工具在插件仓库 `tools\pack.py`。
+
+**信任边界**：插件是在守护进程（管理员权限）里运行的 Python 代码，装进来就等于
+完全信任作者。包校验拦得住路径穿越 / 超大包 / 可执行文件，拦不住插件代码本身做什么。
+官方插件源码全部公开在插件仓库；装第三方插件前先读源码。
 
 ## 从源码构建
 
@@ -81,129 +160,45 @@ build_exe.bat                                   # 主程序 -> app\
 python installer\build_setup.py                 # 安装包 -> installer\dist\Setup_WBOX.exe
 ```
 
-`build_exe.bat` 支持 `OUTDIR`：`set OUTDIR=D:\06-Temp\wbox\app` 后再跑，就把产物打到临时目录，
-不会覆盖正在运行的 `app\`。**v2.11.3 起主程序不带任何插件**：构建会把 `%OUTDIR%\plugins\`
-清掉，`build_setup.py` 也会在 payload 里发现 `plugins/` 条目时直接拒绝打包。
-
-`installer\build_setup.py` 同样支持临时目录：`ABG_APP`（payload 取哪个 app 目录）、
-`ABG_PAYLOAD`（payload.zip 落点）、`ABG_OUT`（setup exe 与中间目录的根），
-`--payload-only` 则只重打 payload.zip。
-
-**v2.1.1 瘦身**：`Setup_WBOX.exe` 本身是 PyInstaller onefile，运行时已有全套
-Python / Tcl 运行时；`payload.zip` 不再重复携带这 9 个二进制与 `tcl\` `tk\` 数据，
-改由安装器从自己的 `_MEIPASS` 复制到目标目录，清单写在 payload 的
-`.wbox-shared-runtime` 里。构建结束会逐项 md5 比对安装器内嵌副本与 `app\` 原文件，
-不一致直接判失败并删掉产物。因此 **payload.zip 不能单独解包当程序用**，必须走
-`Setup_WBOX.exe`。`base_library.zip` 两侧生成内容不同，仍留在 payload 里：
-分发时转成 STORED 让外层 deflate 压到 307 KB，安装后再重压成 DEFLATE 省一半磁盘。
-
-两个 spec 的 `EXCLUDES` 只保留 `tkinter.test` / `tkinter.tix`，其余 tkinter 子模块必须显式写进
-`hiddenimports`。PyInstaller 的 modulegraph 抓不到函数体里的 `from tkinter import ...`，
-漏了会在 GUI 安装路径崩在 `ModuleNotFoundError: tkinter.simpledialog`。
-
-插件内核同理：v2.0.0 起 `guard_core` 不再静态 import `ace_native` / `popup_guard`，
-插件在运行时用 `ctx.import_core()` 动态取，所以 `abg.spec` 的 `hiddenimports` 里必须带上
-`plugin_api / plugin_host / plugin_package / core_defaults / ace_native / popup_guard / game_lib`，
-少一个就是"平时能开、一打游戏就 ModuleNotFoundError"。
-
-## 插件
-
-**主程序不带插件。** 装好 WBOX 是一个空面板，功能插件从官方插件仓库单独下载：
-
-> **插件仓库：<https://github.com/qinchangsheng123/wbox-plugins>**
-> **下载页：<https://github.com/qinchangsheng123/wbox-plugins/releases>**（每个插件一个 Release，带 `.sha256`）
-> 面板齿轮菜单里的「浏览插件库」直接打开它，空面板上也有「插件库」按钮。
-
-面板与守护的功能清单都来自 `plugins\<id>\plugin.json`，不再写死在代码里：
-
-- **加插件**：从插件仓库 Releases 下载 `<id>-v<版本>.zip`（不用解压），点标题栏的
-  「＋」选中它；校验通过后自动生效，守护 2 秒内热重载（游戏会话中会等本局结束，
-  不打断 ACE 限速 / 弹窗监视）；
-- **删插件**：点行尾滑块打开设置浮层，底部「卸载此插件」，确认后目录移进备份区
-  （不硬删），面板那一行随之消失；
-- 菜单的「已安装插件」分组显示版本与状态（正常 / 运行异常 N 次 / 加载失败 /
-  需要更新的内核 / ID 冲突），点一行可直接打开该插件目录；
-- 升级安装会原样保留已装插件（整目录暂存后还原），卸载会把它们备份到
-  `%LOCALAPPDATA%\WBOX\removed-plugins-<时间戳>\`。
-
-### 插件包规范 `wingman-plugin-zip-v1`
-
-统一用 **zip 包**分发，不再手工拷目录。结构（顶层目录名必须等于 `manifest.id`）：
-
-```
-<id>-vX.Y.Z.zip
-  └─ <id>/plugin.json       必填：id / name / version / api（≤ 1）
-     <id>/plugin.py         默认入口，可用 manifest.entry 改
-     <id>/...               其它源码 / 说明 / 小图标
-```
-
-- 允许的文件类型：`.py .json .md .txt .cfg .ini .yaml .yml .csv .xml .png .ico`；
-  可执行文件（`.exe/.dll/.pyd/.bat/.cmd/.ps1/.vbs/.lnk` 等）一律拒绝；
-- 拒绝多顶层目录、路径穿越、绝对路径、盘符、符号链接、加密条目、zip bomb
-  （文件数 ≤ 64、单文件 ≤ 1 MB、解压总量 ≤ 2 MB、包 ≤ 8 MB）；
-- 校验分两步：先只读 `inspect_zip()`，落盘到暂存区后再走一遍宿主的
-  `parse_manifest()`，保证「面板装得上、守护就一定加载得起来」；任何失败都不留半成品；
-- 覆盖安装会先把旧目录备份到 `%LOCALAPPDATA%\WBOX\replaced-plugins-<时间戳>\`。
-
-生成规范包的工具在插件仓库（`wbox-plugins\tools\pack.py`），主程序仓库不再带打包脚本：
-
-```
-python tools\pack.py                     # 打包全部插件 -> dist\
-python tools\pack.py plugins\myplugin    # 打包指定插件
-python tools\pack.py --check <file.zip>  # 只校验不安装
-```
-
-### 官方插件
-
-五个官方插件都在 [wbox-plugins](https://github.com/qinchangsheng123/wbox-plugins)
-仓库里单独演进、单独发版；主程序只负责加载。
-
-| id | 功能 | 版本 | 下载 | 说明 |
-|---|---|---|---|---|
-| `afterburner` | 小飞机关联启动 | 2.2.0 | [zip][r-ab] | 游戏启动拉起 MSI Afterburner / RTSS，退出后只关本局新起的；可设关闭倒计时 |
-| `gamepp` | 游戏加加联动 | 1.2.0 | [zip][r-gp] | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表）；可设关闭倒计时 |
-| `ace` | ACE 防护 | 2.2.0 | [zip][r-ace] | 游戏期间限速 + 退出后按四道闸门清残留，每次判定留决策记录 |
-| `popup` | 弹窗关闭 | 2.1.0 | [zip][r-pop] | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树；观察模式只记录不动手 |
-| `desktop_hud` | 桌面监控悬浮窗 | 1.6.1 | [zip][r-hud] | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
-
-[r-ab]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/afterburner-v2.2.0
-[r-gp]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/gamepp-v1.2.0
-[r-ace]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/ace-v2.2.0
-[r-pop]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/popup-v2.1.0
-[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.6.1
+- `build_exe.bat` 支持 `OUTDIR`（打到临时目录，不覆盖运行中的 `app\`；目标 exe
+  被占用时直接拒绝构建）；构建会清空 `%OUTDIR%\plugins\`，`build_setup.py`
+  在 payload 里发现 `plugins/` 条目直接拒绝打包（本体不带插件）。
+- `build_setup.py` 支持 `ABG_APP` / `ABG_PAYLOAD` / `ABG_OUT` / `--payload-only`；
+  配置模板由 `installer\factory_config.py` 生成（绝不拷生产配置）。
+- **可复现构建**：`PYTHONHASHSEED=0`、`SOURCE_DATE_EPOCH=1000000000` 写死在
+  构建链里，同一条命令两次出同一个字节。比体积 / 比 md5 的正确姿势是重打一遍对照，
+  不是拿历史 md5 当基线。
+- **共享运行时**：payload 不重复携带安装器自带的 Python / Tcl 运行时（68 项），
+  安装时从 `_MEIPASS` 释放并逐项 md5 比对。因此 **payload.zip 不能单独解包当程序用**。
+- spec 注意：tkinter 子模块与插件内核模块（`plugin_api / plugin_host /
+  plugin_package / core_defaults / ace_native / popup_guard / game_lib / events`）
+  必须显式写进 `hiddenimports`——运行时动态导入，modulegraph 看不见。
 
 ## 测试
 
 ```
-python test\test_ace_state.py
-python test\test_popup_guard.py
-python test\test_throttle_state.py
-python test\test_setup_args.py
-python test\test_early_count.py
-python test\test_gear_menu.py
-python test\test_quiet_gate.py
-python test\test_plugin_manifest.py
-python test\test_plugin_discovery.py
-python test\test_plugin_isolation.py
-python test\test_plugin_empty.py
-python test\test_plugin_hooks.py
-python test\test_plugin_retry_close.py
-python test\test_plugin_gui.py
-python test\test_plugin_gui_overflow.py
-python test\test_plugin_package.py
-python test\test_gamepp_plugin.py
-python test\test_plugin_actions.py
-python test\test_setup_gui.py
-python test\test_skin_panel.py
-python test\test_ui_size.py
-python test\test_tray_live.py
-python test\test_ui_copy_keyboard.py
-python test\test_ui_motion.py
-python test\test_qa_*.py
+python test\run_all_inproc.py        # 全套 49 个测试，单进程顺序跑（查跨模块污染）
+for %f in (test\test_*.py) do @python %f    # 逐个独立进程（最严格，CI 口径）
 ```
 
-## 版本
+脚本式测试（顶层断言 + `sys.exit()`），**不适用 `unittest discover`**（只 import
+不执行，会把 `sys.exit(0)` 记成 error）。另有：
 
+- `test\test_qa_build_setup_guard.py`：出包守卫 43 项（payload 边界 / 出厂模板 /
+  docs 随包 / 两份 spec 裁剪规则一致…）；
+- 冻结 exe 三项自检：`--self-check`（插件真加载 + 菜单渲染）、`--self-test`、
+  `--layout-check`（三档大小 × 两档皮肤 × 六档 DPI，overflow=0）。
+
+## 边界与说明
+
+- ACE 相关只调整进程优先级和 IO 优先级，不注入、不改文件、不拦截通信；
+  清理只针对没退干净的残留进程，四道闸门 + 身份校验，取不到创建时间一律不动。
+- 弹窗拦截只针对 `ClientBrowser.exe`（游戏内嵌浏览器宿主），进程名与路径双命中；
+  QQ / 微信 / TIM / WeGame 主干等常驻进程在保护名单，绝不误伤。
+- 本项目只在一台 Windows 10 19045 和一台 Windows 11 虚拟机上验证过，其他环境未测。
+- 离线产品：不联网、不上报、无遥测；「浏览插件库」只是打开浏览器访问 GitHub。
+
+## 版本
 **v2.13.0**（2026-11-19）
 
 一轮稳定性专项（9 项），全部带回归测试，全套 49 个测试单进程通过：
@@ -809,9 +804,3 @@ v1.0.0、安装器 `v-setup` 视图）逐项复核，把剩余 UI 缺口全部�
 - 加：系统时间跳变检测
 
 **v1.3.0**：更名僚机 Wingman；修 4 个 P0（提权、快照失败误判、PATH 劫持、弹窗误杀）。
-
-## 说明
-
-- ACE 相关只调整进程优先级和 IO 优先级，不注入、不改文件、不拦截通信。
-- 弹窗拦截只针对 `ClientBrowser.exe`（游戏内嵌浏览器宿主），判定要求进程名与路径双命中。
-- 本项目只在一台 Windows 10 19045 和一台 Windows 11 虚拟机上验证过，其他环境未测。
