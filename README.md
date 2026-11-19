@@ -31,9 +31,14 @@ QQ / 微信 / TIM 等常驻进程在保护名单里，不会被误伤。
 
 ## 安装
 
-1. 下载 `Setup_WBOX.exe`
+1. 从 [Releases](https://github.com/qinchangsheng123/wbox/releases/latest) 下载
+   `Setup_WBOX_v<版本>.exe`（同目录有 `.sha256` 侧车）
 2. 双击安装，默认装到 `C:\Program Files\WBOX`
 3. 首次运行会请求管理员权限（改进程优先级、注册计划任务都需要）
+
+装完安装目录里带完整开发资料：`docs\PLUGIN-SPEC.md`（插件规范）、
+`docs\插件开发指南.html`（自包含单页，离线双击可读）、`docs\plugin-template\`
+（改名即用的最小插件）。
 
 支持静默安装：
 

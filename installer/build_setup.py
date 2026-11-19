@@ -44,6 +44,7 @@ BUILD = os.path.join(OUT, '_build')
 PY = sys.executable        # 用当前解释器，别把打包机路径写死
 
 SKIP_NAMES = {'guard.log', 'guard.log.1', 'guard.pid', 'stop.flag',
+              'guard_crash.log',
               'self_test.txt', 'self_test_run.log', 'settings_selfcheck.txt',
               'layout_check.txt', 'self_test_run.log.1', 'guard.log.2',
               'rescan_games.flag', 'ace_state.json', 'games_cache.json',
