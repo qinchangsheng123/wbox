@@ -170,10 +170,14 @@ def main():
               '无可调项插件展开块：空态文案 + 卸载入口')
         check(app.inline_open == 'demo_b', '换一行展开会收上一行')
 
-        print('[4] 抗锯齿：极简开关 / 图标走超采样光栅 sprite')
+        print('[4] 极简开关是方角矩形（设计稿 .p-sw）；图标仍走光栅 sprite')
         sw = app.switches['demo_a']
         kinds = [sw.type(i) for i in sw.find_all()]
-        check('image' in kinds, '开关画的是光栅 sprite：%r' % kinds)
+        check(kinds == ['rectangle', 'rectangle'],
+              '开关只有两块矩形（轨道 + 方角把手）：%r' % kinds)
+        check(sw.winfo_reqwidth() == app.px(36)
+              and sw.winfo_reqheight() == app.px(18),
+              '极简开关 36×18 逻辑像素')
         g = app.add_btn
         kinds = [g.type(i) for i in g.find_all()]
         check('image' in kinds, '＋图标画的是光栅 sprite：%r' % kinds)
@@ -181,17 +185,8 @@ def main():
         n0 = len(sg._COV_CACHE)
         sw.event_generate('<Button-1>')
         root.update()
-        check(sw._anim_knob is None and len(sg._COV_CACHE) >= n0,
+        check(sw._anim_knob is None and len(sg._COV_CACHE) == n0,
               '极简拨动零动画链，几何不变不重算覆盖率')
-        img = [i for i in sw.find_all() if sw.type(i) == 'image'][0]
-        photo = sw.itemcget(img, 'image')
-        pw, ph = sw.winfo_reqwidth(), sw.winfo_reqheight()
-        cols = set()
-        for yy in range(ph):
-            for xx in range(pw):
-                cols.add(tuple(sw.tk.call(photo, 'get', xx, yy)))
-        check(len(cols) >= 3,
-              'sprite 含 bg/ink 之外的中间混色（抗锯齿生效）：%d 色' % len(cols))
 
         print('[5] 同窗换页：设置页入口与返回')
         app.toggle_pane()

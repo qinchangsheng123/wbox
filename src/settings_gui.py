@@ -840,19 +840,25 @@ def client_area_animation():
 
 
 class Switch(tk.Canvas):
-    """40×22 胶囊开关，纯 Canvas 自绘，双主题通用。"""
+    """开关：玻璃档 46×28 胶囊；极简档 36×18 方角（行内 30×16）。"""
 
-    def __init__(self, master, app, value=False, command=None):
+    def __init__(self, master, app, value=False, command=None, small=False):
         self.app = app
         self.value = bool(value)
         self.command = command
         self.enabled = True
+        self.small = bool(small)
         self._anim_knob = None      # 动效中的把手位置 0..1（None = 按 value 画）
         self._anim_fill = None      # 动效中的轨道色（None = 按 value 取 token）
         # 尺寸跟皮肤走：玻璃 46×28（iOS 规格）、极简 36×18（少画一半像素）。
+        # small=行内展开里的小号（设计稿 .p-sw.sm 30×16）。
         perf = getattr(getattr(app, 'skin', None), 'performance', 'standard')
-        self.w = app.px(46 if perf == 'standard' else 36)
-        self.h = app.px(28 if perf == 'standard' else 18)
+        if self.small:
+            self.w = app.px(30)
+            self.h = app.px(16)
+        else:
+            self.w = app.px(46 if perf == 'standard' else 36)
+            self.h = app.px(28 if perf == 'standard' else 18)
         self.bg = app.colors['bg']
         self._focused = False
         tk.Canvas.__init__(self, master, width=self.w, height=self.h,
@@ -970,19 +976,14 @@ class Switch(tk.Canvas):
             1.0 if self.value else 0.0)
         x0 = pad + (w - 2 * pad - k) * kp
         if not getattr(self.app, 'glass', True):
-            # 极简档：程序化抗锯齿小图，胶囊/把手边缘按覆盖率混色，无阶梯。
-            layers = [(_cov_cached(('swt', w, h), w, h,
-                                   [(0, h / 2.0, h / 2.0, w - h / 2.0, h / 2.0,
-                                     h / 2.0)]), fill)]
-            if line:
-                layers.append((_cov_cached(('swl', w, h), w, h,
-                                           [(3, h / 2.0, h / 2.0, w - h / 2.0,
-                                             h / 2.0, h / 2.0 - 0.5, 0.5)]), line))
-            layers.append((_cov_cached(('swk', w, h, k, int(round(x0))), w, h,
-                                       [(1, x0 + k / 2.0, (h - k) / 2.0 + k / 2.0,
-                                         k / 2.0)]), knob))
-            self._img = _sprite(self, w, h, layers, self.bg)
-            self.create_image(0, 0, anchor='nw', image=self._img)
+            # 极简档：**方角**轨道 + 方角把手（设计稿 .p-sw 36×18 / .p-sw.sm 30×16）。
+            # v2.12.1：原来这里画的是胶囊，跟设计稿的方角差一截——极简档的
+            # 卖点是"方角 + 原生控件"，开关自己先圆了就没法讲这句话。
+            # 边缘都落在整像素上，不需要抗锯齿光栅，直接画矩形最省。
+            self.create_rectangle(0, 0, w, h, fill=fill, outline='')
+            ky = (h - k) / 2.0
+            self.create_rectangle(x0, ky, x0 + k, ky + k, fill=knob,
+                                  outline='')
         else:
             if line:
                 round_rect(self, 0, 0, w, h, h // 2, fill=fill, outline=line,
@@ -1427,6 +1428,10 @@ class App(object):
         self._drag = None
         self._maximized = False
         self._normal_geo = None
+        # 窗口顶边（屏幕坐标）。极简档展开一行会变高，窗口必须**向下长**：
+        # 之前每次 place() 都按新高度重新居中，展开时整个窗口向上跳 280 px，
+        # 点中的那一行跟着跑掉，看起来就像"点了没反应"。
+        self._win_top = None
         self._tweens = {}
         self._motion_on = client_area_animation()
         self._menu_fade = None
@@ -1561,7 +1566,9 @@ class App(object):
         self.dbg('place start area=%d,%d,%d,%d mode=%s sdpi=%d wdpi=%d' % (
             lx, ly, sw, sh, DPI_MODE, system_dpi(), window_dpi(self.root.winfo_id())))
         w = self.content_width()
-        self.root.geometry('%dx100+%d+%d' % (w, lx + max(0, (sw - w) // 2), ly))
+        cur_y = self._win_top if self._win_top is not None else ly
+        self.root.geometry('%dx100+%d+%d' % (w, lx + max(0, (sw - w) // 2),
+                                            cur_y))
         self.root.update_idletasks()
         self.relayout()
         self.root.update_idletasks()
@@ -1577,10 +1584,18 @@ class App(object):
         need = self.root.winfo_reqheight()
         if getattr(self, '_maximized', False):
             h, x, y = sh, lx, ly
+            self._win_top = None
         else:
             h = min(need, sh - self.px(40))
             x = lx + max(0, (sw - w) // 2)
-            y = ly + max(0, (sh - h) // 2)
+            if self._win_top is None:
+                y = ly + max(0, (sh - h) // 2)
+            else:
+                # 顶边钉住：展开/收起只改高度，不重新居中。
+                # 下面装不下时才上移，仍不越过工作区顶。
+                y = max(ly, min(self._win_top,
+                                ly + max(0, sh - h - self.px(8))))
+            self._win_top = y
         self.root.geometry('%dx%d+%d+%d' % (w, h, x, y))
         self.root.update_idletasks()
         self.apply_window_region()
@@ -1722,8 +1737,11 @@ class App(object):
         # 这三样必须在重建前跟着皮肤走，否则极简档会画成玻璃的样子。
         self.glass = skin.performance == 'standard'
         self.win_w_pref = BASE_W if self.glass else PLAIN_W
-        self.pane = 'list'
-        self.inline_open = None
+        # 极简档换明暗/换皮肤时留在原页：用户在「设置」里点「深色」，
+        # 结果被弹回列表页，等于这一下白点了。玻璃档没有同窗换页，才归位。
+        if self.glass:
+            self.pane = 'list'
+            self.inline_open = None
         self.resize_fonts()
         # 只读模式下外观只在本进程内生效，不弹"需要管理员权限"打断切换
         if persist:
@@ -2069,6 +2087,8 @@ class App(object):
                     self.apply_window_region()
                     hh = int(geo.split('+')[0].split('x')[1])
                     self._fit_overflow(self.root.winfo_reqheight(), hh)
+                    # 还原后顶边要跟着几何走，否则下一次展开会跳到居中位置
+                    self._win_top = int(geo.rsplit('+', 1)[1])
                 except Exception:
                     pass
             kind = 'max'
@@ -2585,14 +2605,26 @@ class App(object):
         tail = self.px(30 if glass else 22)
         tail_gap = self.px(4)
         name_x = pad_l + icon_px + gap
+        # v2.12.1：极简档没有设置浮层，版本号必须有地方露出来——行尾留一枚
+        # 「v2.1.1」小字（设计稿 .p-row .hint 的位置），展开后来源行再写全。
+        ver_lbl = None
+        ver_w = self.px(44) if (not glass and getattr(entry, 'version', '')) \
+            else 0
         name_w = max(self.px(40), row_w - name_x - tail - tail_gap
-                     - sw_w - self.px(24))
+                     - sw_w - self.px(24) - ver_w)
         name = tk.Label(row, text=entry.name, bg=self.row_base, fg=c['fg'],
                         font=self.f_row, anchor='w')
         row.create_window(name_x, rh // 2, window=name, anchor='w',
                           width=name_w, height=rh)
         if entry.tip:
             self.tooltips.append(ToolTip(self, name, entry.tip))
+        if ver_w:
+            ver_lbl = tk.Label(row, text='v%s' % entry.version,
+                               bg=self.row_base, fg=c['t3'],
+                               font=self.f_small, anchor='e')
+            row.create_window(row_w - self.px(10) - tail - tail_gap - sw_w
+                              - self.px(6), rh // 2, window=ver_lbl,
+                              anchor='e')
 
         sw = Switch(row, self, value=self.vars[entry.id].get(),
                     command=self.on_toggle)
@@ -2635,8 +2667,14 @@ class App(object):
                 w.configure(cursor='hand2')
                 w.bind('<ButtonRelease-1>',
                        lambda e, ent=entry: self.toggle_inline(ent))
+            if ver_lbl is not None:
+                ver_lbl.configure(cursor='hand2')
+                ver_lbl.bind('<ButtonRelease-1>',
+                             lambda e, ent=entry: self.toggle_inline(ent))
 
         kids = [icon, name, sw]
+        if ver_lbl is not None:
+            kids.append(ver_lbl)
         self.bind_row_hover(row, kids, (gear if glass else None))
         return row, rh
 
@@ -2697,7 +2735,9 @@ class App(object):
         极简档的性能账在这里：少一个窗口句柄、少一套 z 序、展开收合零动画，
         代价是列表会跳动（设计稿明确接受）。
         """
-        bg = self.tok['fill_2'] if self.glass else self.tok['fill']
+        # 设计稿 .p-expand 底色 #F7F7F7 / 深色 #181818，比窗口底深一档，
+        # 但比"卡片"轻：极简档没有卡片阴影，全靠这一层色差说明归属。
+        bg = self.tok['fill_2']
         c = self.colors
         box = tk.Frame(board, bg=bg)
         # 展开块缩进到名称列（图标 14 + 图标 22 + 间距 14 ≈ 40），
@@ -2710,11 +2750,15 @@ class App(object):
         # 否则 int/choice/path 这几类控件会画出白色方块。
         old_bg = self.colors['bg']
         self.colors['bg'] = bg
+        self._setting_switches = {}
         try:
             full = self.inline_full == entry.id
             show = specs if full else specs[:self.INLINE_MAX]
+            # 设计稿 .p-expand padding-top:8px；顶部留一点，展开块才不会贴住
+            # 上一行的分隔线。
+            tk.Frame(indent, bg=bg, height=self.px(4)).pack(fill='x')
             for spec in show:
-                self.build_setting_row(indent, entry, spec, cfg, bg=bg)
+                self.build_inline_item(indent, entry, spec, cfg, bg)
         finally:
             self.colors['bg'] = old_bg
         if len(specs) > self.INLINE_MAX:
@@ -2722,18 +2766,21 @@ class App(object):
             ml = tk.Label(indent, text=txt, bg=bg, fg=c['t2'],
                           font=self.f_small, anchor='w', cursor='hand2',
                           padx=self.px(2), pady=self.px(2))
-            ml.pack(fill='x', padx=self.px(14), pady=(0, self.px(4)))
+            ml.pack(fill='x', padx=self.px(14), pady=(self.px(2), self.px(2)))
             ml.bind('<Button-1>',
                     lambda e, ent=entry: self.toggle_inline_full(ent))
         if not specs:
             tk.Label(indent, text='这个插件没有可调项', bg=bg, fg=c['t3'],
                      font=self.f_small, anchor='w').pack(
-                fill='x', padx=self.px(14), pady=self.px(8))
-        # 来源一行：装完之后也能看见"这插件是谁给的、要碰什么"。
-        # 未声明发布者时明说来源不明——插件是完全信任的代码，这句话比版本号重要。
+                fill='x', padx=self.px(14), pady=self.px(6))
+        # 来源一行：装完之后也能看见"这插件是哪一版、谁给的、要碰什么"。
+        # v2.12.1：版本号放最前——极简档没有版本胶囊，这里是唯一能核对的地方。
         pub = (getattr(entry, 'publisher', '') or '').strip()
         perms = list(getattr(entry, 'permissions', None) or ())
-        src_parts = ['发布者：' + (pub or '未声明（来源不明）')]
+        src_parts = []
+        ver = (getattr(entry, 'version', '') or '').strip()
+        src_parts.append('版本 v' + ver if ver else '版本未知')
+        src_parts.append('发布者：' + (pub or '未声明（来源不明）'))
         if perms:
             labels = [plugin_package.PERMISSION_LABELS.get(p, p + '（未登记）')
                       for p in perms[:4]]
@@ -2741,19 +2788,164 @@ class App(object):
         src = tk.Label(indent, text=' · '.join(src_parts), bg=bg, fg=c['t3'],
                        font=self.f_small, anchor='w', justify='left',
                        wraplength=max(self.px(220), row_w - self.px(80)))
-        src.pack(fill='x', padx=self.px(14), pady=(0, self.px(2)))
-        rm = tk.Label(indent, text='卸载此插件', bg=bg, fg=c['danger'],
-                      font=self.f_body, anchor='w', cursor='hand2',
-                      padx=self.px(2), pady=self.px(4))
-        rm.pack(fill='x', padx=self.px(14), pady=(self.px(2), self.px(8)))
-        rm.bind('<ButtonRelease-1>',
-                lambda e, ent=entry: self.on_delete_plugin(ent))
+        src.pack(fill='x', padx=self.px(14), pady=(self.px(2), self.px(2)))
+        # 卸载：设计稿 .p-del 是带 1px 描边的方角按钮，不是一行红字。
+        # 方角 + 描边把「破坏性操作」和普通设置项区分开，也离手指远一点。
+        del_row = tk.Frame(indent, bg=bg)
+        del_row.pack(fill='x', padx=self.px(14), pady=(self.px(6), self.px(8)))
+        del_btn = tk.Frame(del_row, bg=bg, highlightthickness=1,
+                           highlightbackground=c['line'],
+                           highlightcolor=c['line'], cursor='hand2')
+        del_btn.pack(anchor='w')
+        rm = tk.Label(del_btn, text='卸载此插件', bg=bg, fg=c['danger'],
+                      font=self.f_small, anchor='w', cursor='hand2',
+                      padx=self.px(10), pady=self.px(4))
+        rm.pack()
+        hover_bg = mix_hex(bg, c['danger'], 0.08)
+
+        def paint_del(on):
+            col = hover_bg if on else bg
+            del_btn.configure(bg=col)
+            rm.configure(bg=col)
+
+        for w in (del_btn, rm):
+            w.bind('<ButtonRelease-1>',
+                   lambda e, ent=entry: self.on_delete_plugin(ent))
+            w.bind('<Enter>', lambda e: paint_del(True), add='+')
+            w.bind('<Leave>', lambda e: paint_del(False), add='+')
         self._keyboard(rm, lambda ent=entry: self.on_delete_plugin(ent))
         box.update_idletasks()
         hh = max(self.px(30), box.winfo_reqheight())
         board.create_window(card_pad, y, window=box, anchor='nw',
                             width=row_w, height=hh)
         return hh
+
+    def build_inline_item(self, master, entry, spec, cfg, bg):
+        """极简档行内展开的一行（设计稿 .p-item：30 高、标签左、值右）。
+
+        和浮层版 `build_setting_row` 的差别只有排版：不写第二行说明
+        （hint 收进 Tooltip），开关用 30×16 的小号。这样 4 项设置只占
+        120 px，展开时窗口不会一下子顶到屏幕上沿——旧版每项 60+ px，
+        展开后窗口从 409 长到 969，直接把点中的那一行顶走。
+        """
+        c = dict(self.colors)
+        c['bg'] = bg
+        ro = self.readonly
+        row = tk.Frame(master, bg=bg, height=self.px(30))
+        row.pack(fill='x', padx=(self.px(14), self.px(32)))
+        row.pack_propagate(False)
+        lb = tk.Label(row, text=spec['label'], bg=bg,
+                      fg=(c['t3'] if ro else c['fg']), font=self.f_body,
+                      anchor='w')
+        lb.pack(side='left', fill='y')
+        if spec.get('hint'):
+            self.tooltips.append(ToolTip(self, lb, spec['hint']))
+
+        typ = spec['type']
+        if typ == 'bool':
+            cur = bool(cfg_get_path(cfg, spec['key'], False))
+            sw = Switch(row, self, value=cur, small=True,
+                        command=lambda sp=spec: self.on_setting_bool(
+                            entry, sp, self.switch_of(sp['key'])))
+            sw.set_bg(bg)
+            sw.pack(side='right', padx=(self.px(8), 0))
+            if ro:
+                sw.set_enabled(False)
+            self._setting_switches[spec['key']] = sw
+            return row
+
+        ink = c['t3'] if ro else c['fg']
+        if typ == 'int':
+            try:
+                cur = int(cfg_get_path(cfg, spec['key'], spec['min']))
+            except (TypeError, ValueError):
+                cur = spec['min']
+            cur = max(spec['min'], min(spec['max'], cur))
+            unit = spec.get('unit') or ''
+            state = [cur]
+            var = tk.StringVar(row, value=('%d %s' % (cur, unit)).strip())
+            plus = tk.Label(row, text='+', bg=bg, fg=ink, font=self.f_small,
+                            padx=self.px(6), cursor=('arrow' if ro else 'hand2'))
+            plus.pack(side='right')
+            tk.Label(row, textvariable=var, bg=bg, fg=c['t3'],
+                     font=self.f_small, anchor='e', width=6).pack(side='right')
+            minus = tk.Label(row, text='−', bg=bg, fg=ink, font=self.f_small,
+                             padx=self.px(6), cursor=('arrow' if ro else 'hand2'))
+            minus.pack(side='right')
+
+            def step(delta):
+                new = max(spec['min'], min(spec['max'], state[0] + delta))
+                if new == state[0]:
+                    return
+                if self.write_setting(entry, spec, new):
+                    state[0] = new
+                    var.set(('%d %s' % (new, unit)).strip())
+
+            if not ro:
+                minus.bind('<Button-1>', lambda e: step(-spec.get('step', 1)))
+                plus.bind('<Button-1>', lambda e: step(spec.get('step', 1)))
+            return row
+
+        if typ == 'choice':
+            try:
+                cur = str(cfg_get_path(cfg, spec['key'], spec['options'][0][0]))
+            except (KeyError, IndexError):
+                cur = ''
+            buttons = {}
+
+            def paint(btn, on):
+                btn.configure(bg=(c['fg'] if on else bg),
+                              fg=(c['bg'] if on else c['t2']))
+
+            def pick(value):
+                if ro:
+                    return
+                if self.write_setting(entry, spec, value):
+                    for v, b in buttons.items():
+                        paint(b, v == value)
+
+            for value, label in reversed(list(spec['options'])):
+                b = tk.Label(row, text=label, font=self.f_small,
+                             padx=self.px(6), pady=self.px(1),
+                             cursor=('arrow' if ro else 'hand2'))
+                b.pack(side='right', padx=(self.px(4), 0))
+                buttons[value] = b
+                paint(b, value == cur)
+                if not ro:
+                    b.bind('<Button-1>', lambda e, v=value: pick(v))
+            return row
+
+        # path：标签左、值右；值旁一枚「选择」，点它开文件对话框。
+        cur = str(cfg_get_path(cfg, spec['key'], '') or '')
+        shown = os.path.basename(cur) if cur else '自动查找'
+        # 先 pack 按钮再 pack 值：pack 是"先占先得"，反了会把「选择」挤到
+        # 文件名左边（值右对齐、按钮在最右，设计稿 p-item 的顺序）。
+        btn = tk.Label(row, text='选择', bg=bg,
+                       fg=(c['t3'] if ro else c['t2']), font=self.f_small,
+                       cursor=('arrow' if ro else 'hand2'), padx=self.px(6))
+        btn.pack(side='right')
+        val = tk.Label(row, text=shown, bg=bg, fg=c['t3'],
+                       font=self.f_small, anchor='e')
+        val.pack(side='right')
+
+        def choose():
+            if ro:
+                return
+            try:
+                path = filedialog.askopenfilename(
+                    parent=self.root, title='选择「%s」' % spec['label'],
+                    filetypes=[('程序', '*.exe'), ('所有文件', '*.*')])
+            except Exception:
+                return
+            if not path:
+                return
+            if self.write_setting(entry, spec, path.replace('/', '\\')):
+                val.configure(text=os.path.basename(path) or path)
+
+        if not ro:
+            btn.bind('<Button-1>', lambda e: choose())
+            val.bind('<Button-1>', lambda e: choose())
+        return row
 
     def toggle_pane(self):
         self.pane = 'set' if self.pane == 'list' else 'list'
@@ -2828,37 +3020,89 @@ class App(object):
             tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
             return row
 
+        def radio_line(text, value, on, command, disabled=False):
+            """设计稿 .p-radio：13 px 圆圈 + 居中 7 px 实心点。
+
+            皮肤与明暗都走这一种行：圆圈比「● / ○」字符轻，也不会因
+            字体不同而错位（字符方案在 125% 缩放下大小不一）。
+            """
+            row = row_box()
+            rad = tk.Canvas(row, width=self.px(13), height=self.px(13),
+                            bg=bg, highlightthickness=0, bd=0)
+            rad.pack(side='left', padx=(pad_l, self.px(10)))
+            ring = c['t4'] if not on else c['fg']
+            rad.create_oval(0.5, 0.5, self.px(13) - 0.5, self.px(13) - 0.5,
+                            outline=ring, width=1)
+            if on:
+                ins = self.px(3)
+                rad.create_oval(ins, ins, self.px(13) - ins,
+                                self.px(13) - ins, fill=c['fg'], outline='')
+            lb = tk.Label(row, text=text, bg=bg,
+                          fg=(c['t3'] if disabled else c['fg']),
+                          font=self.f_body, anchor='w')
+            lb.pack(side='left', fill='y')
+            val = tk.Label(row, text=value, bg=bg,
+                           fg=(c['danger'] if disabled else c['t3']),
+                           font=mono, anchor='e', padx=pad_r)
+            val.pack(side='right', fill='y')
+            if command is not None and not disabled:
+                for w in (row, rad, lb, val):
+                    w.configure(cursor='hand2')
+                    w.bind('<ButtonRelease-1>', lambda e: command())
+                    w.bind('<Enter>', lambda e: [x.configure(bg=c['hover'])
+                                                 for x in (row, lb, val)],
+                           add='+')
+                    w.bind('<Leave>', lambda e: [x.configure(bg=bg)
+                                                 for x in (row, lb, val)],
+                           add='+')
+                self._keyboard(row, command)
+                self._set_focusables.append(row)
+            tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
+            return row
+
+        def seg_row(label, options, cur_key, command):
+            """`标签 … [ 选项 | 选项 ]` 一行：明暗与窗口大小共用。
+
+            选中的那一格用 fg 底 / bg 字（黑白翻转），不再靠描边——
+            极简档没有强调色，翻转是唯一不需要额外颜色的选中态。
+            """
+            row = row_box()
+            tk.Label(row, text=label, bg=bg, fg=c['fg'], font=self.f_body,
+                     anchor='w', padx=pad_l).pack(side='left', fill='y')
+            seg = tk.Frame(row, bg=c['fill'])
+            seg.pack(side='right', padx=pad_r)
+            for key, lab in options:
+                on = key == cur_key
+                b = tk.Label(seg, text=lab, font=self.f_small,
+                             padx=self.px(8), pady=self.px(2),
+                             bg=(c['fg'] if on else c['fill']),
+                             fg=(c['bg'] if on else c['t2']), cursor='hand2')
+                b.pack(side='left')
+                b.bind('<ButtonRelease-1>', lambda e, k=key: command(k))
+                self._keyboard(b, lambda k=key: command(k))
+                self._set_focusables.append(b)
+            tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
+            return row
+
         group('外观')
         for item in skins.catalog(BASE):
             if item['reason'] == 'api':
-                line('○ ' + item['name'], '需要更新')
+                radio_line(item['name'], '需要更新', False, None, disabled=True)
                 continue
             sk_ = item['skin']
             cur = sk_.id == self.skin.id
-            line(('● ' if cur else '○ ') + sk_.name,
-                 '当前' if cur else sk_.perf_label,
-                 lambda i=sk_.id: self.set_skin(i))
-        line('从文件安装皮肤…', '', self.on_install_skin)
+            radio_line(sk_.name, '当前' if cur else sk_.perf_label, cur,
+                       lambda i=sk_.id: self.set_skin(i))
+        line('从文件安装皮肤…', '.wbskin', self.on_install_skin)
 
-        # v2.12.0：窗口大小三档。放在外观组里（和明暗、皮肤同一处），
-        # 选完立即按新倍率重建当前页，不用退出去再进来。
-        size_row = row_box()
-        tk.Label(size_row, text='窗口大小', bg=bg, fg=c['fg'],
-                 font=self.f_body, anchor='w', padx=pad_l).pack(
-                     side='left', fill='y')
-        size_seg = tk.Frame(size_row, bg=bg)
-        size_seg.pack(side='right', padx=pad_r)
-        for key, label, _zoom in UI_SIZES:
-            on = key == self.ui_size
-            b = tk.Label(size_seg, text=label, font=self.f_small,
-                         padx=self.px(8), pady=self.px(3),
-                         bg=(c['fg'] if on else c['bg']),
-                         fg=(c['bg'] if on else c['t2']), cursor='hand2')
-            b.pack(side='left', padx=(self.px(3), 0))
-            b.bind('<ButtonRelease-1>', lambda e, k=key: self.set_ui_size(k))
-            self._keyboard(b, lambda k=key: self.set_ui_size(k))
-            self._set_focusables.append(b)
-        tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
+        # v2.12.1：明暗（黑/白）必须在设置页里就能选。之前只在「外观与皮肤…」
+        # 浮层里有，用户进了极简设置页只能看到白色，等于黑色入口消失了。
+        seg_row('明暗', (('system', '跟随系统'), ('light', '浅色'),
+                         ('dark', '深色')),
+                self.appearance_pref, self.set_theme)
+        # v2.12.0：窗口大小三档。和明暗同一排法，选完按新倍率重建当前页。
+        seg_row('窗口大小', tuple((k, lab) for k, lab, _z in UI_SIZES),
+                self.ui_size, self.set_ui_size)
 
         group('启动与守护')
         boot_line = row_box()

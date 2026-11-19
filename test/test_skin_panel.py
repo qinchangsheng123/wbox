@@ -192,9 +192,17 @@ def main():
         root.update()
         t = texts(app.set_inner)
         check('从文件安装皮肤…' in t, 'plain 设置页有装第三方皮肤入口')
-        check('需要更新' in t and '○ future-glass' in t,
+        check('需要更新' in t and 'future-glass' in t,
               'plain 设置页也露出需要更新行')
-        check('● 极简' in t, '当前皮肤_radio 勾在极简上')
+        # v2.12.1：皮肤行从「●/○ 字符」改成设计稿的 13px 圆圈单选，
+        # 因此这里不再断言字符前缀，改断言"名称 + 当前"这对语义文案。
+        check('极简' in t and '当前' in t,
+              '当前皮肤行：极简 + 当前')
+        radios = [w for w in sg.walk(app.set_inner)
+                  if isinstance(w, tk.Canvas)
+                  and int(w.cget('width')) == app.px(13)
+                  and int(w.cget('height')) == app.px(13)]
+        check(len(radios) >= 2, '皮肤行是圆圈单选（13px）：%d 个' % len(radios))
         app.toggle_pane()
         root.update()
 
