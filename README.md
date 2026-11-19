@@ -158,13 +158,13 @@ python tools\pack.py --check <file.zip>  # 只校验不安装
 | `gamepp` | 游戏加加联动 | 1.1.1 | [zip][r-gp] | 游戏启动拉起 GamePP，退出后只关本局新起的；路径自动探测（配置 / 常见目录 / 卸载项 / 进程表） |
 | `ace` | ACE 防护 | 2.1.1 | [zip][r-ace] | 游戏期间限速 + 退出后按四道闸门清残留 |
 | `popup` | 弹窗关闭 | 2.0.1 | [zip][r-pop] | 会话中提前关窗口 + 退出后清 `ClientBrowser` 进程树 |
-| `desktop_hud` | 桌面监控悬浮窗 | 1.5.1 | [zip][r-hud] | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
+| `desktop_hud` | 桌面监控悬浮窗 | 1.6.0 | [zip][r-hud] | 桌面上显示帧率 / 占用等指标（`builtin=false`，与其它插件一样装卸） |
 
 [r-ab]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/afterburner-v2.1.1
 [r-gp]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/gamepp-v1.1.1
 [r-ace]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/ace-v2.1.1
 [r-pop]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/popup-v2.0.1
-[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.5.1
+[r-hud]: https://github.com/qinchangsheng123/wbox-plugins/releases/tag/desktop_hud-v1.6.0
 
 ## 测试
 
