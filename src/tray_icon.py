@@ -113,6 +113,14 @@ def _u():
     u.DestroyWindow.argtypes = [wintypes.HWND]
     u.DestroyIcon.restype = wintypes.BOOL
     u.DestroyIcon.argtypes = [wintypes.HICON]
+    # explorer 重启会广播 TaskbarCreated：收到后要自己把图标加回去，
+    # 否则图标消失到下次启动面板为止。
+    u.RegisterWindowMessageW.restype = wintypes.UINT
+    u.RegisterWindowMessageW.argtypes = [wintypes.LPCWSTR]
+    # 图标文件读不出来时退回系统默认图标：hIcon=NULL 的 NIM_ADD 在通知区
+    # 可能是一块空白，用户会当成"没显示"。
+    u.LoadIconW.restype = wintypes.HANDLE
+    u.LoadIconW.argtypes = [wintypes.HINSTANCE, ctypes.c_void_p]
     return u
 
 
@@ -136,20 +144,32 @@ class TrayIcon(object):
         self.tip = tip
         self.commands = queue.Queue()
         self.active = False
+        self.error = ''           # 起不来的原因，面板写日志用（不弹框）
         self._balloons = queue.Queue()
         self._hwnd = None
         self._thread = None
         self._ready = threading.Event()
         self._wndproc = None      # 保持引用，防回调被 GC
+        self._taskbar_msg = 0     # explorer 重启广播（TaskbarCreated）
 
     # ---- 主线程 API ----
     def start(self):
-        if self._thread is not None:
+        """返回本次是否成功。失败后**允许重试**：开机自启时 explorer 还没
+        准备好托盘，Shell_NotifyIcon 会失败；旧实现把 _thread 留着，第二次
+        start() 直接返回 False，整个会话就再也没有图标。"""
+        if self.active:
+            return True
+        t = self._thread
+        if t is not None and t.is_alive():
+            self._ready.wait(1.0)
             return self.active
+        self._ready.clear()
         self._thread = threading.Thread(target=self._run, name='wbox-tray',
                                         daemon=True)
         self._thread.start()
-        self._ready.wait(2.0)
+        self._ready.wait(3.0)
+        if not self.active:
+            self._thread = None   # 线程已结束，下次重建类/窗口
         return self.active
 
     def balloon(self, title, text):
@@ -200,8 +220,9 @@ class TrayIcon(object):
     def _run(self):
         try:
             self._loop()
-        except Exception:
+        except Exception as e:
             self.active = False
+            self.error = '托盘线程异常：%r' % (e,)
         finally:
             self._ready.set()
 
@@ -220,15 +241,21 @@ class TrayIcon(object):
         wc.hInstance = hinst
         wc.lpszClassName = cls_name
         if not u.RegisterClassW(ctypes.byref(wc)):
+            self.error = 'RegisterClassW 失败（类名冲突）'
             return
         hwnd = u.CreateWindowExW(0, cls_name, 'WBOX Tray', 0, 0, 0, 0, 0,
                                  HWND_MESSAGE, None, hinst, None)
         if not hwnd:
             u.UnregisterClassW(cls_name, hinst)
+            self.error = 'CreateWindowExW 失败'
             return
         self._hwnd = hwnd
+        self._taskbar_msg = u.RegisterWindowMessageW('TaskbarCreated')
         hicon = u.LoadImageW(None, self.icon_path, IMAGE_ICON, 16, 16,
                              LR_LOADFROMFILE)
+        if not hicon:
+            # IDI_APPLICATION = 32512，走 MAKEINTRESOURCE
+            hicon = u.LoadIconW(None, ctypes.c_void_p(32512))
         nid = NOTIFYICONDATAW()
         nid.cbSize = ctypes.sizeof(nid)
         nid.hWnd = hwnd
@@ -241,6 +268,7 @@ class TrayIcon(object):
             u.DestroyWindow(hwnd)
             u.UnregisterClassW(cls_name, hinst)
             self._hwnd = None
+            self.error = 'Shell_NotifyIcon(NIM_ADD) 失败（explorer 可能未就绪）'
             return
         self._nid = nid
         self.active = True
@@ -261,6 +289,9 @@ class TrayIcon(object):
 
     def _on_msg(self, hwnd, msg, wp, lp):
         u = _u()
+        if msg and msg == self._taskbar_msg:
+            self._readd()
+            return 0
         if msg == WM_TRAY:
             ev = lp & 0xFFFF
             if ev in (WM_LBUTTONUP, WM_LBUTTONDBLCLK):
@@ -275,6 +306,17 @@ class TrayIcon(object):
             u.PostQuitMessage(0)
             return 0
         return u.DefWindowProcW(hwnd, msg, wp, lp)
+
+    def _readd(self):
+        """explorer 重启后通知区被清空：收到 TaskbarCreated 就重挂一次。
+        NIM_ADD 对同一 (hWnd,uID) 是幂等的，重复调用不会出现两枚图标。"""
+        nid = getattr(self, '_nid', None)
+        if nid is None:
+            return
+        try:
+            _s().Shell_NotifyIconW(NIM_ADD, ctypes.byref(nid))
+        except Exception:
+            pass
 
     def _menu(self, hwnd):
         u = _u()

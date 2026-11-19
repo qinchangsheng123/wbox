@@ -1454,6 +1454,7 @@ class App(object):
         self.notify_var = tk.BooleanVar(
             root, value=bool(cfg.get('notify_game_end')))
         self.tray = None
+        self._close_without_tray = False
         self._last_session = ''
 
         self.main = tk.Frame(root, bg=self.colors['bg'],
@@ -1542,10 +1543,13 @@ class App(object):
 
     def note(self, msg):
         """皮肤回退这类"用户可能想知道、但不该被弹框打断"的事件，只写日志。"""
+        self.log_line('skin', msg)
+
+    def log_line(self, tag, msg):
         try:
             with open(os.path.join(BASE, 'guard.log'), 'a', encoding='utf-8') as f:
-                f.write('%s [skin] %s\n' % (
-                    __import__('time').strftime('%Y-%m-%d %H:%M:%S'), msg))
+                f.write('%s [%s] %s\n' % (
+                    __import__('time').strftime('%Y-%m-%d %H:%M:%S'), tag, msg))
         except Exception:
             pass
 
@@ -2057,10 +2061,19 @@ class App(object):
             self.close_settings()
         except Exception:
             pass
-        if self.tray is not None and bool(self.tray_var.get()):
-            # 「启动后收进托盘」：关窗 = 收进托盘，守护与面板进程都继续活着
-            self.root.withdraw()
-            return
+        if bool(self.tray_var.get()):
+            if self.tray is None or not self.tray.active:
+                # 勾了「收进托盘」但图标不在：先补一次。补不上就不隐藏——
+                # 窗口一收，用户既没有窗口也没有托盘图标，只能当程序丢了。
+                self.apply_tray_pref()
+            if self.tray is not None and self.tray.active:
+                self.root.withdraw()
+                return
+            if not self._close_without_tray:
+                self._close_without_tray = True
+                self.log_line('tray', '托盘不可用，已保持面板可见；'
+                                      '再点一次关闭将退出面板')
+                return
         self.root.destroy()
 
     def on_min(self):
@@ -2233,14 +2246,15 @@ class App(object):
             self.build_set_view(self.main)
         else:
             self.build_list_view(self.main)
-        # Tab 顺序照文案规范 §4：＋ → 字标（菜单入口）→ 各行开关 → 各行行尾。
-        # 设置页没有开关行，链收成「面包屑 → 字标 → 页内可点行」。
+        # Tab 顺序照文案规范 §4：＋ → 字标（菜单入口，仅玻璃档）→ 各行开关
+        # → 各行行尾。极简档没有字标入口，链首是「设置」按钮。
         chain = []
         if self.pane != 'set' and getattr(self, 'add_wrap', None) is not None:
             chain.append(self.add_wrap)
         if not self.glass and getattr(self, 'pane_btn', None) is not None:
             chain.append(self.pane_btn)
-        chain.append(self.brand_wrap)
+        if self.glass:
+            chain.append(self.brand_wrap)
         if self.pane == 'set' and not self.glass:
             chain.extend(getattr(self, '_set_focusables', []))
         else:
@@ -2315,12 +2329,16 @@ class App(object):
                 self._keyboard(txt, self.toggle_pane)
                 self.pane_btn = txt
 
-        # 左：字标（整块热区 = 菜单入口）
+        # 左：字标。玻璃档没有「设置」按钮，整块热区就是菜单入口；
+        # 极简档右上角已经有「设置」，字标只是身份标识——同一件事挂两个入口
+        # 既重复又容易误触，所以极简档不绑点击（v2.12.2）。
         self.brand_wrap = tk.Frame(bar, bg=c['bg'], padx=self.px(8),
-                                   pady=self.px(4), cursor='hand2')
+                                   pady=self.px(4),
+                                   cursor=('hand2' if glass else 'arrow'))
         self.brand_wrap.pack(side='left', padx=(self.px(20 if glass else 8), 0))
         brand = tk.Label(self.brand_wrap, text='WBOX', bg=c['bg'], fg=c['fg'],
-                         font=self.f_wordmark, cursor='hand2')
+                         font=self.f_wordmark,
+                         cursor=('hand2' if glass else 'arrow'))
         brand.pack(side='left')
         self.gear_wrap, self.gear_btn = self.brand_wrap, brand
         branders = [self.brand_wrap, brand]
@@ -2333,27 +2351,29 @@ class App(object):
             self.chev.pack(side='left', padx=(self.px(5), 0))
             branders.append(self.chev)
         for w in branders:
-            w.bind('<ButtonRelease-1>', lambda e: self.on_brand())
-            w.bind('<Enter>', lambda e: self.hover(branders, True), add='+')
-            w.bind('<Leave>', lambda e: self.hover(branders, False), add='+')
+            # 拖动是窗口手势，两档都留；点开设置只给玻璃档。
             w.bind('<Button-1>', self._drag_start, add='+')
             w.bind('<B1-Motion>', self._drag_move, add='+')
-        self._keyboard(self.brand_wrap, self.on_brand)
+            if glass:
+                w.bind('<ButtonRelease-1>', lambda e: self.on_brand())
+                w.bind('<Enter>', lambda e: self.hover(branders, True), add='+')
+                w.bind('<Leave>', lambda e: self.hover(branders, False), add='+')
+        if glass:
+            self._keyboard(self.brand_wrap, self.on_brand)
         bar.bind('<Button-1>', self._drag_start, add='+')
         bar.bind('<B1-Motion>', self._drag_move, add='+')
         if not glass and self.pane == 'set':
             tk.Label(bar, text='设置', bg=c['bg'], fg=c['t3'],
                      font=self.f_body).pack(side='left', padx=(self.px(6), 0))
-        self.tooltips.append(ToolTip(
-            self, brand,
-            ('菜单：守护状态、开机自启、日志、配置、外观与皮肤。' if glass
-             else '设置：外观与皮肤、启动与守护、日志目录。')))
+        if glass:
+            self.tooltips.append(ToolTip(
+                self, brand,
+                '菜单：守护状态、开机自启、日志、配置、外观与皮肤。'))
 
     def on_brand(self):
+        """字标点击 = 玻璃档的菜单入口；极简档字标不可点（入口是「设置」）。"""
         if self.glass:
             self.toggle_settings()
-        else:
-            self.toggle_pane()
 
     def build_list_view(self, master):
         """插件列表。玻璃 = 圆角卡片；极简 = 方角直排。"""
@@ -2494,8 +2514,11 @@ class App(object):
         return 'break'
 
     def _focus_brand(self):
-        """浮层收起后焦点还给字标（菜单入口），不留「焦点掉进虚空」。"""
-        w = getattr(self, 'brand_wrap', None)
+        """浮层收起后焦点还给入口：玻璃档是字标，极简档是「设置」。"""
+        if getattr(self, 'glass', True):
+            w = getattr(self, 'brand_wrap', None)
+        else:
+            w = getattr(self, 'pane_btn', None)
         if w is not None and w.winfo_exists():
             try:
                 w.focus_set()
@@ -3987,19 +4010,39 @@ class App(object):
             if sw is not None:
                 sw.set_value(not val)
 
-    def apply_tray_pref(self):
+    def apply_tray_pref(self, retry=0):
         """托盘图标存在性默认常驻：面板进程活着就该在通知区有一枚 WBOX，
         关窗即退出时随进程摘除。「启动后收进托盘」只决定关窗行为（收托盘 vs
         退出）与气泡前提，不再决定图标有没有——v2.11.1 前图标也 opt-in，
-        用户默认看不到任何托盘存在，被当成没做。"""
+        用户默认看不到任何托盘存在，被当成没做。
+
+        v2.12.2：开机自启时 explorer 常常还没建好通知区，NIM_ADD 会失败。
+        旧实现在这里一次性放弃（TrayIcon.start 之后不再重试），于是整个会话
+        没有图标；偏偏关窗又按「收进托盘」隐藏窗口，结果窗口和图标一起消失，
+        只能重新启动面板。现在按 1/2/4/8/15 秒退避重试，每次失败写一行日志。
+        """
         if self.probe:
             return
         icon = ICON_DARK if self.theme == 'dark' else ICON_LIGHT
+        delays = (1.0, 2.0, 4.0, 8.0, 15.0)
         if self.tray is None:
             t = tray_icon.TrayIcon(icon, tip='WBOX')
             if t.start():
                 self.tray = t
+                self._close_without_tray = False
+                self.log_line('tray', '托盘图标已就绪')
                 self.root.after(200, self._tray_pump)
+            elif retry < len(delays):
+                self.log_line('tray', '托盘图标创建失败（%s），%.0f 秒后重试'
+                              % (t.error or '原因未知', delays[retry]))
+                try:
+                    self.root.after(int(delays[retry] * 1000),
+                                    lambda: self.apply_tray_pref(retry + 1))
+                except Exception:
+                    pass
+            else:
+                self.log_line('tray', '重试 %d 次仍失败（%s），本会话按无托盘运行'
+                              % (len(delays), t.error or '原因未知'))
         else:
             self.tray.set_icon(icon)
         if not bool(self.tray_var.get()) and self.root.state() == 'withdrawn':
@@ -4013,6 +4056,13 @@ class App(object):
     def _tray_pump(self):
         t = self.tray
         if t is None:
+            return
+        if not t.active:
+            # 消息线程退出（explorer 重启、会话切换、Windows 清了通知区）：
+            # 图标已经不在，自愈重建一枚，别让面板悄悄变成"没有托盘"。
+            self.tray = None
+            self.log_line('tray', '托盘线程已退出，重建图标')
+            self.apply_tray_pref()
             return
         try:
             while True:
@@ -4028,6 +4078,7 @@ class App(object):
 
     def tray_open(self):
         self.root.deiconify()
+        self._close_without_tray = False
         self.root.lift()
         try:
             self.root.focus_force()
@@ -4862,8 +4913,12 @@ def self_check():
         lines.append('features=%s' % '|'.join(
             e.name for e in entries
             if e.status == plugin_host.STATUS_OK and e.home))
-        lines.append('second_level=wordmark_menu+skin_panel')
         _skin, _appearance = skins.resolve(cfg, base=BASE)
+        _std = _skin.performance == 'standard'
+        # 入口随骨架分档：玻璃没有「设置」按钮，字标就是菜单入口；
+        # 极简右上角本来就有「设置」，字标不再绑点击（v2.12.2）。
+        lines.append('second_level=%s' % (
+            'wordmark_menu+skin_panel' if _std else 'set_button'))
         lines.append('skin=%s/%s perf=%s' % (
             _skin.id, _appearance, _skin.perf_label))
         _size = ui_size_from_cfg(cfg)
@@ -4875,7 +4930,7 @@ def self_check():
         lines.append('plugins_dir=%s exists=%s' % (
             PLUGINS_DIR, os.path.isdir(PLUGINS_DIR)))
         lines.append('plugins_state=%s' % os.path.isfile(STATE_FILE))
-        lines.append('menu_entry=label:WBOX')
+        lines.append('menu_entry=%s' % ('label:WBOX' if _std else 'label:设置'))
         lines.append('plugin_actions=add:plus,settings:cfg,remove:in_popup edit=%s'
                      % plugin_package.plugins_writable(PLUGINS_DIR))
         lines.append('plugin_package=%s' % plugin_package.FORMAT_ID)
