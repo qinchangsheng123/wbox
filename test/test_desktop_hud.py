@@ -10,6 +10,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _plugin_src  # noqa: E402  插件源码在独立仓库 wbox-plugins
 
@@ -224,6 +225,23 @@ class FakeU(object):
         return True
 
 
+class FakeU2(FakeU):
+    """加 PostMessageW / 扩展样式 / 分层 alpha：偏好投递与采样线程要的。"""
+
+    def PostMessageW(self, hwnd, msg, wp, lp):
+        self.calls.append(('post', msg))
+        return True
+
+    def GetWindowLongPtrW(self, hwnd, idx):
+        return 0
+
+    def SetWindowLongPtrW(self, hwnd, idx, val):
+        return 0
+
+    def SetLayeredWindowAttributes(self, hwnd, key, alpha, flags):
+        return True
+
+
 def make_ov(progman=555, workerw=777):
     o = ov_mod.HudOverlay()
     o._u = FakeU(progman, workerw)
@@ -291,47 +309,63 @@ o5._reposition()
 c = last(o5, 'pos')
 check(c[2] == 100 and c[3] == 200, '顶层时坐标不换算')
 
-print('[D] 游戏中停采样（FakeU + 桩采样器）')
+print('[D] v1.6.0 游戏中停采样 = 停采样线程（FakeU + 桩采样器）')
 
 
 class StubSampler(object):
     def __init__(self):
         self.n = 0
+        self.cfg = []
 
     def sample(self):
         self.n += 1
         return {'cpu': 1}
 
+    def set_gpu_clock_enabled(self, on):
+        self.cfg.append(('clock', on))
+
+    def set_gpu_target(self, mode, luid=None):
+        self.cfg.append(('target', mode, luid))
+
+    def adapters(self, ttl=None):
+        return []
+
+    def diagnostics(self):
+        return ['stub=called']
+
+    def close(self):
+        pass
+
+
+def _worker_alive(o):
+    return bool(o._worker is not None and o._worker.is_alive())
+
 
 o6 = make_ov()
+o6._u = FakeU2()
+o6._interval = 200
 o6._sampler = StubSampler()
+o6._pending_sampler_cfg = {'gpu_clock': True, 'gpu_select': 'auto',
+                           'gpu_luid': ''}
+o6._start_worker()
+time.sleep(0.3)
+check(_worker_alive(o6) and o6._sampler.n >= 1,
+      '采样线程起来并产出读数（窗口线程不参与采样）')
 o6._apply_paused(True)
-check(o6._paused is True and last(o6, 'kill') == ('kill', 1),
-      '暂停 -> KillTimer 停采样节拍')
-n = len(o6._u.calls)
-o6._apply_paused(True)
-check(len(o6._u.calls) == n, '重复暂停无冗余 API')
+check(o6._paused is True and not _worker_alive(o6),
+      '暂停 -> 采样线程退出')
+n = o6._sampler.n
+time.sleep(0.3)
+check(o6._sampler.n == n, '暂停期间不再采样')
 o6._apply_paused(False)
-check(o6._paused is False and last(o6, 'timer')[1] == 1
-      and o6._sampler.n == 1 and last(o6, 'inv') == ('inv',),
-      '恢复 -> 重建定时器 + 立即补采样 + 重绘')
+time.sleep(0.3)
+check(o6._paused is False and _worker_alive(o6) and o6._sampler.n > n,
+      '恢复 -> 重新起采样线程并继续采样')
+check([c for c in o6._sampler.cfg if c[0] == 'clock'],
+      '采样器配置在采样线程里应用（GPU 频率开关）')
+o6._stop_worker()
 
-print('[E] v1.4.0 刷新节拍不被守护 tick 劫持（FakeU，不建真实窗口）')
-
-
-class FakeU2(FakeU):
-    def PostMessageW(self, hwnd, msg, wp, lp):
-        self.calls.append(('post', msg))
-        return True
-
-    def GetWindowLongPtrW(self, hwnd, idx):
-        return 0
-
-    def SetWindowLongPtrW(self, hwnd, idx, val):
-        return 0
-
-    def SetLayeredWindowAttributes(self, hwnd, key, alpha, flags):
-        return True
+print('[E] v1.6.0 节拍改动即时生效（FakeU，不建真实窗口）')
 
 
 ovr = ov_mod.HudOverlay()
@@ -349,20 +383,20 @@ check(last(ovr, 'post') == ('post', ov_mod.WM_APP_REFRESH), '偏好真变化仍�
 
 o7 = make_ov()
 o7._u = FakeU2()
-o7._make_font = lambda prefs: None      # 隔离 GDI，只测定时器装载逻辑
+o7._make_font = lambda prefs: None      # 隔离 GDI
 o7._apply_style = lambda prefs: None
 o7._sync_parent = lambda v: None
 o7._apply_prefs(dict(ov_mod.DEFAULT_PREFS), initial=False)
-t1 = [c for c in o7._u.calls if c[0] == 'timer']
-check(len(t1) == 1, '首次 _apply_prefs 装载定时器一次')
-o7._apply_prefs(dict(ov_mod.DEFAULT_PREFS), initial=False)
-t2 = [c for c in o7._u.calls if c[0] == 'timer']
-check(len(t2) == 1, 'refresh_sec 未变 -> 不重装定时器（同 id 重装会重置计时）')
-o7._apply_prefs(dict(ov_mod.DEFAULT_PREFS, refresh_sec=2.0), initial=False)
-t3 = [c for c in o7._u.calls if c[0] == 'timer']
-check(len(t3) == 2 and t3[-1][2] == 2000, 'refresh_sec 变化 -> 重装为新节拍')
-o7._apply_paused(True)
-check(o7._timer_ms == 0, '暂停后节拍清零，恢复时会重新装载')
+check(o7._interval == 1000, '默认节拍 1000ms')
+o7._apply_prefs(dict(ov_mod.DEFAULT_PREFS, refresh_ms=2000), initial=False)
+check(o7._interval == 2000, 'refresh_ms 变化 -> 节拍即时更新（无需重装定时器）')
+o7._apply_prefs(dict(ov_mod.DEFAULT_PREFS, refresh_ms=50), initial=False)
+check(o7._interval == 200, 'refresh_ms 下限钳到 200ms')
+o7._apply_prefs(dict(ov_mod.DEFAULT_PREFS, refresh_ms=99999), initial=False)
+check(o7._interval == 10000, 'refresh_ms 上限钳到 10000ms')
+check(o7._pending_sampler_cfg is not None
+      and o7._pending_sampler_cfg['gpu_select'] == 'auto',
+      '采样器参数排队给采样线程（窗口线程不直接调原生）')
 
 print('[F] v1.4.0 退出前排空请求队列（菜单改动不丢）')
 ctx2 = FakeCtx()
@@ -593,6 +627,250 @@ _pspec.loader.exec_module(_pmod)
 check(sys.modules.get('hud_overlay') is _sentinel,
       '包上下文下只摘本包内缓存，不动顶层同名模块')
 sys.modules.pop('hud_overlay', None)
+
+print('[I] v1.6.0 选卡 / 重枚举 / 退避 / 诊断 / 阈值精度')
+
+# I1 节拍与阈值钳制
+check(ov_mod._interval_ms({'refresh_ms': 100}) == 200, '节拍下限 200ms')
+check(ov_mod._interval_ms({'refresh_ms': 'abc'}) == 1000, '坏值回默认 1000ms')
+check(ov_mod._interval_ms({'refresh_ms': 12000}) == 10000, '节拍上限 10000ms')
+check(ov_mod._pct_num({'warn_percent': 0}, 'warn_percent', 70) == 1,
+      '阈值下限钳到 1')
+check(ov_mod._pct_num({}, 'high_percent', 90) == 90, '阈值缺省 90')
+
+# I2 百分比小数位
+o10 = make_ov()
+o10._sample = {'cpu': 42.4, 'gpu': 90.2, 'ram_percent': 30.0,
+               'vram_percent': 5.0, 'cpu_mhz': 3800.0, 'gpu_mhz': 250.0,
+               'vram_used': 1.0 * 1073741824, 'vram_total': 8 * 1073741824,
+               'ram_used': 10.0 * 1073741824, 'ram_total': 32 * 1073741824}
+o10._prefs['pct_decimals'] = 1
+_lines = dict((label, val) for label, val, _p in o10._build_lines())
+check(_lines['CPU'].startswith(' 42.4%'), 'pct_decimals=1 -> 42.4%')
+o10._prefs['pct_decimals'] = 0
+_lines = dict((label, val) for label, val, _p in o10._build_lines())
+check(_lines['CPU'].strip() == '42%', 'pct_decimals=0 -> 整数百分比')
+
+
+# I3 选卡规则：auto 按显存总量、load 按占用、luid 指定
+class StubAdapters(object):
+    def __init__(self, ads):
+        self.ads = list(ads)
+        self.last_error = None
+        self.list_calls = 0
+
+    def list(self, ttl=None):
+        self.list_calls += 1
+        return list(self.ads)
+
+    def name_of(self, luid):
+        for a in self.ads:
+            if a['luid'] == luid:
+                return a['name']
+        return None
+
+
+BIG = {'luid': '0x00000000_0x00001111', 'name': 'Big GPU', 'vram': 12 << 30}
+SMALL = {'luid': '0x00000000_0x00002222', 'name': 'Small GPU', 'vram': 4 << 30}
+_mem = [('luid_0x00000000_0x00001111_phys_0', 100.0),
+        ('luid_0x00000000_0x00002222_phys_0', 900.0)]
+_eng = [('luid_0x00000000_0x00001111_phys_0_eng_0_engtype_3D', 10.0),
+        ('luid_0x00000000_0x00002222_phys_0_eng_1_engtype_3D', 50.0)]
+
+
+def mk_pdh(mode='auto', luid=None, ads=(BIG, SMALL)):
+    p = hm.PdhCounters()
+    p.adapters = StubAdapters(ads)
+    p.set_target_pref(mode, luid)
+    return p
+
+
+p_auto = mk_pdh('auto')
+_l = p_auto._luids(_mem, _eng)
+check(p_auto._pick_target(_mem, _l) == BIG['luid']
+      and p_auto._target_source.startswith('auto'),
+      'auto 选显存总量最大的卡（12G），而不是占用最高的卡（900MB 那张）')
+check(p_auto._target_name == 'Big GPU', '目标卡名称来自 DXGI 映射')
+
+p_load = mk_pdh('load')
+_l = p_load._luids(_mem, _eng)
+check(p_load._pick_target(_mem, _l) == SMALL['luid'],
+      'load 沿用旧规则：显存占用最大')
+check(p_load._target_name == 'Small GPU', 'load 也补齐显卡名')
+
+p_luid = mk_pdh('luid', SMALL['luid'])
+_l = p_luid._luids(_mem, _eng)
+check(p_luid._pick_target(_mem, _l) == SMALL['luid'], 'luid 模式尊重指定卡')
+
+p_gone = mk_pdh('luid', '0x00000000_0x00009999')
+_l = p_gone._luids(_mem, _eng)
+check(p_gone._pick_target(_mem, _l) == BIG['luid']
+      and 'luid_gone' in (p_gone.last_event or ''),
+      '指定卡不在了 -> 回落 auto 并记录事件')
+
+# I4 目标卡连续消失 -> 重枚举
+class FakePdhObj(object):
+    def PdhCollectQueryData(self, q):
+        return 0
+
+
+def drive(p, mem, eng):
+    p._query = object()
+    p._pdh = FakePdhObj()
+    p._collect_array = (lambda c: mem if c == 'mem' else
+                        (eng if c == 'eng' else []))
+    p._c_mem, p._c_engine, p._c_perf = 'mem', 'eng', 'perf'
+    return p
+
+
+p_miss = mk_pdh('luid', BIG['luid'])
+drive(p_miss, [], [])
+p_miss._target = BIG['luid']        # 模拟上一拍的选卡结果
+p_miss.sample()
+p_miss.sample()
+check(p_miss.target_rebuilds == 0 and p_miss._misses == 2,
+      '连续 2 轮找不到目标卡仍保留（还没到 MISS_LIMIT）')
+p_miss.sample()
+check(p_miss.target_rebuilds == 1 and p_miss._target is None,
+      '第 3 轮判缺失 -> 作废目标并计一次重枚举')
+drive(p_miss, _mem, _eng)
+p_miss.sample()
+check(p_miss._target == BIG['luid'], '设备恢复后重新选到卡')
+
+# I5 PDH 初始化失败退避后能重建（原来永久放弃）
+p_re = hm.PdhCounters()
+p_re._fail('probe')
+check(p_re.sample() is None and p_re._failed, '退避期内直接返回 None')
+p_re._next_retry = 0.0
+
+
+def _fake_setup():
+    p_re._query = object()
+    p_re._failed = False
+    p_re._pdh = FakePdhObj()
+    p_re._c_mem = p_re._c_engine = p_re._c_perf = None
+
+
+p_re._setup = _fake_setup
+p_re._collect_array = lambda c: []
+p_re.sample()
+check(p_re._failed is False and p_re.reinit_count == 1,
+      '退避到期 -> 重建查询并恢复采样（reinit 计数 +1）')
+
+# I6 分项状态
+st = hm.PdhCounters().status()
+for k in ('ok', 'init_rc', 'collect_rc', 'reinit', 'rebuilds', 'target',
+          'target_source', 'error', 'event', 'adapters'):
+    check(k in st, 'status() 含分项字段 %s' % k)
+
+# I7 真实 DXGI 枚举（本机；拿不到就说明原因，不判红）
+ads_real = hm.DxgiAdapters()
+_lst = ads_real.list(ttl=0.0)
+if _lst:
+    check(all(a['luid'].startswith('0x') and a['name'] for a in _lst),
+          'DXGI 枚举出 %d 个适配器：%s'
+          % (len(_lst), ', '.join(a['name'] for a in _lst)))
+    check(all(_lst[i]['vram'] >= _lst[i + 1]['vram'] for i in range(len(_lst) - 1)),
+          '适配器按显存总量降序')
+else:
+    print('  skip DXGI 枚举（%s）' % (ads_real.last_error or '无适配器'))
+
+# I8 菜单：选卡与诊断落 prefs / 日志
+REQS = []
+o11 = ov_mod.HudOverlay(request_cb=lambda r: REQS.append(r))
+o11._u = FakeU2()
+o11._hwnd = 12345
+o11._prefs = dict(ov_mod.DEFAULT_PREFS)
+o11._make_font = lambda prefs: None
+o11._apply_style = lambda prefs: None
+o11._sync_parent = lambda v: None
+o11._relayout = lambda: None
+o11._menu_adapters = [dict(BIG), dict(SMALL)]
+o11._apply_menu(ov_mod.M_GPU_BASE + 1)
+check(o11._prefs['gpu_select'] == 'luid'
+      and o11._prefs['gpu_luid'] == SMALL['luid'],
+      '菜单选第 2 张卡 -> gpu_select=luid + 对应 LUID')
+check([r for r in REQS if r.get('action') == 'prefs'][-1]['prefs']['gpu_select']
+      == 'luid', '选卡结果回传插件持久化')
+o11._apply_menu(ov_mod.M_GPU_AUTO)
+check(o11._prefs['gpu_select'] == 'auto' and o11._prefs['gpu_luid'] == '',
+      '菜单「自动」清掉指定 LUID')
+o11._menu_adapters = []             # 模拟菜单快照过期（换卡 / 拔卡）
+o11._apply_menu(ov_mod.M_GPU_BASE)
+check(o11._prefs['gpu_select'] == 'auto' and o11._prefs['gpu_luid'] == '',
+      '适配器表为空时不改偏好（防越界写入错误 LUID）')
+
+o11._sampler = StubSampler()
+o11._slow_events = 2
+o11._apply_menu(ov_mod.M_DIAG)
+_diag = [r['msg'] for r in REQS if r.get('action') == 'log']
+check(_diag and 'hud running=' in _diag[-1] and 'stub=called' in _diag[-1],
+      '诊断项把分项状态写进日志（含采样线程节拍与后端）')
+
+# I9 refresh_sec → refresh_ms 迁移（config 与运行期快照两条路）
+ctx3 = FakeCtx()
+p3 = mod.Plugin(ctx3)
+p3._overlay = StubOverlay()
+p3.on_config({'desktop_hud_enabled': True,
+              'desktop_hud': {'refresh_sec': 0.4}})
+check(p3._effective().get('refresh_ms') == 400
+      and 'refresh_sec' not in p3._effective(),
+      'config 里的 refresh_sec=0.4 迁移为 refresh_ms=400 并去掉旧键')
+ctx3.store['hud'] = {'prefs': {'refresh_sec': 2.5}}
+p3.on_load()
+check(p3._effective().get('refresh_ms') == 2500,
+      '运行期快照里的 refresh_sec=2.5 迁移为 2500ms')
+ctx4 = FakeCtx()
+p4 = mod.Plugin(ctx4)
+p4._overlay = StubOverlay()
+p4.on_config({'desktop_hud_enabled': True,
+              'desktop_hud': {'refresh_sec': 0.4, 'refresh_ms': 800}})
+check(p4._effective().get('refresh_ms') == 800,
+      '两项同时存在时 refresh_ms 优先')
+
+# J v1.6.0 自定义坐标落到屏外 -> 回收到可见区（显示器布局变化的善后）
+class FakeU4(FakeU2):
+    """单屏 2560x1440；MonitorFromWindow 故意失败，走 SPI 回退。"""
+
+    def MonitorFromWindow(self, hwnd, flags):
+        return 0
+
+    def SystemParametersInfoW(self, action, p, out, f):
+        rc = _deref(out)
+        rc.left, rc.top, rc.right, rc.bottom = 0, 0, 2560, 1440
+        return True
+
+    def GetSystemMetrics(self, idx):
+        return {76: 0, 77: 0, 78: 2560, 79: 1440}.get(idx, 0)
+
+REQS.clear()
+o12 = ov_mod.HudOverlay(request_cb=lambda r: REQS.append(r))
+u12 = FakeU4()
+o12._u = u12
+o12._hwnd = 4321
+o12._w, o12._h = 220, 140
+o12._prefs = dict(ov_mod.DEFAULT_PREFS)
+o12._prefs.update({'position': 'custom', 'x': 1779, 'y': 1956, 'margin': 16})
+o12._shown = True
+o12._reposition()
+hits = [c for c in u12.calls if c[0] == 'pos']
+check(bool(hits) and hits[-1][2] == 2560 - 220 - 16 and hits[-1][3] == 16,
+      '屏外自定义坐标回收到右上角')
+check(any(r.get('action') == 'log' and '在可见屏幕之外' in (r.get('msg') or '')
+          for r in REQS), '回收时写一行日志说明原因')
+REQS.clear()
+o12._last_pos = None
+o12._reposition()
+check(not [r for r in REQS if r.get('action') == 'log'],
+      '回收日志只记一次（不刷屏）')
+REQS.clear()
+o12._prefs.update({'x': 100, 'y': 120})
+o12._last_pos = None
+u12.calls = []
+o12._reposition()
+hits = [c for c in u12.calls if c[0] == 'pos']
+check(bool(hits) and hits[-1][2] == 100 and hits[-1][3] == 120,
+      '屏内自定义坐标原样保留（不误搬）')
 
 shutil.rmtree(TMP, ignore_errors=True)
 print('')
