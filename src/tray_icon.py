@@ -273,19 +273,23 @@ class TrayIcon(object):
         self._nid = nid
         self.active = True
         self._ready.set()
-        msg = MSG()
-        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
-            u.TranslateMessage(ctypes.byref(msg))
-            u.DispatchMessageW(ctypes.byref(msg))
-        # 循环退出（WM_CLOSE 里 PostQuitMessage）：摘图标再销窗
         try:
-            s.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
-        except Exception:
-            pass
-        u.DestroyWindow(hwnd)
-        u.UnregisterClassW(cls_name, hinst)
-        self._hwnd = None
-        self.active = False
+            msg = MSG()
+            while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+                u.TranslateMessage(ctypes.byref(msg))
+                u.DispatchMessageW(ctypes.byref(msg))
+        finally:
+            # 正常退出（WM_CLOSE -> PostQuitMessage）或消息循环抛异常都必须
+            # 摘图标：否则通知区留一枚幽灵图标，面板自愈重建时又挂一枚新的，
+            # 看起来就是「托盘多个 W」。
+            try:
+                s.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+            except Exception:
+                pass
+            u.DestroyWindow(hwnd)
+            u.UnregisterClassW(cls_name, hinst)
+            self._hwnd = None
+            self.active = False
 
     def _on_msg(self, hwnd, msg, wp, lp):
         u = _u()

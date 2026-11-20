@@ -157,6 +157,21 @@ def part_tray():
             print('      异常：%r' % (e,))
         check(ok and app.tray.active, '收到 TaskbarCreated 不报错、图标仍在')
 
+        print('[B3b] 托盘：模拟左键消息弹回窗口（单实例通知复用此路径）')
+        import ctypes
+        root.withdraw()
+        root.update()
+        u = ctypes.windll.user32
+        u.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                   ctypes.c_size_t, ctypes.c_ssize_t]
+        u.PostMessageW(app.tray._hwnd, tray_icon.WM_TRAY, 1,
+                       tray_icon.WM_LBUTTONUP)
+        time.sleep(0.3)
+        root.update()
+        check(root.state() != 'withdrawn',
+              'WM_TRAY + WM_LBUTTONUP -> CMD_OPEN -> 窗口弹回：state=%s'
+              % root.state())
+
         print('[B4] 关窗：勾了「收进托盘」但图标补不上时，不隐藏窗口')
         app.tray.stop()
         app.tray = None
@@ -182,9 +197,85 @@ def part_tray():
                 pass
 
 
+def part_single_instance():
+    print('[C] 面板单实例（v2.14.0：托盘多个 W 的根因修复）')
+    import win_env
+    notified = []
+    orig = win_env._notify_existing_panel
+    win_env._notify_existing_panel = lambda: notified.append(1)
+    # 独立互斥体名：开发机上面板通常正跑着，用生产名永远拿到「已存在」，
+    # 断言会被环境带偏；顺带避免测试给真实面板发 WM_TRAY 弹窗。
+    name = 'Local\\WBOXPanelSingleton-test-%d' % os.getpid()
+    try:
+        first = win_env.panel_single_instance(name)
+        second = win_env.panel_single_instance(name)
+        check(first is True, '首次启动拿到互斥体，继续运行')
+        check(second is False, '重复启动让位（返回 False，调用方退出）')
+        check(notified == [1], '让位时恰好通知一次已有面板弹出')
+    finally:
+        win_env._notify_existing_panel = orig
+
+
+def part_tray_cleanup():
+    print('[D] 托盘：消息循环异常也摘图标（不留幽灵图标）')
+    calls = []
+
+    class FakeS(object):
+        def Shell_NotifyIconW(self, op, nid):
+            calls.append(op)
+            return True
+
+    base = tray_icon._u()
+
+    class BoomU(object):
+        def __getattr__(self, n):
+            return getattr(base, n)
+
+        def GetMessageW(self, *a):
+            raise RuntimeError('模拟消息循环崩溃')
+
+    orig_u, orig_s = tray_icon._u, tray_icon._s
+    tray_icon._u = lambda: BoomU()
+    tray_icon._s = lambda: FakeS()
+    try:
+        t = tray_icon.TrayIcon(os.path.join(TMP, 'icon-light.ico'))
+        t.start()
+        # _ready 在消息循环崩溃**之前**就已置位，start() 可能先返回 True；
+        # 等线程真正结束再断言状态，避免竞态误报。
+        if t._thread is not None:
+            t._thread.join(2.0)
+        check(not t.active, '消息循环异常后托盘标记为不可用')
+        check(tray_icon.NIM_ADD in calls and tray_icon.NIM_DELETE in calls,
+              '异常路径也摘图标（NIM_ADD 之后有 NIM_DELETE）：%r' % (calls,))
+    finally:
+        tray_icon._u, tray_icon._s = orig_u, orig_s
+
+
+def part_destroy_guard():
+    print('[E] 托盘：重建子控件不误杀托盘（<Destroy> 冒泡回归）')
+    write_cfg('plain')
+    root = tk.Tk()
+    root.attributes('-alpha', 0.0)
+    app = sg.App(root, probe=False, dpi_override=96)
+    root.update()
+    try:
+        check(app.tray is not None and app.tray.active, '托盘就绪')
+        app.rebuild()
+        root.update()
+        check(app.tray is not None and app.tray.active,
+              'rebuild 后托盘仍存活（旧实现被 <Destroy> 冒泡误杀）')
+    finally:
+        if app.tray is not None:
+            app.tray.stop()
+        root.destroy()
+
+
 def main():
     part_plain()
     part_tray()
+    part_single_instance()
+    part_tray_cleanup()
+    part_destroy_guard()
     print('')
     if FAILS:
         print('FAILED %d：%s' % (len(FAILS), FAILS))

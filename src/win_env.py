@@ -194,6 +194,71 @@ def elevate_settings(args):
 
 
 
+# ---- 面板单实例 ----
+_PANEL_MUTEX = None
+PANEL_MUTEX_NAME = 'Local\\WBOXPanelSingleton'
+
+
+def panel_single_instance(name=PANEL_MUTEX_NAME):
+    """命名互斥体：同一会话只留一个面板。返回 True 表示本进程应继续运行。
+
+    守护有 Local\\WBOXSingleton，面板此前没有互斥：连开两次就留下两个面板
+    进程，各自往通知区挂一枚 WBOX 图标（2026-11-20 实测「托盘多个 W」的成因）。
+    重复启动时先通知已有面板弹出，再返回 False 让调用方退出。互斥体本身
+    创建失败则放行——单实例是约束，不是功能前提。
+
+    name 可覆盖：测试必须用独立名字，否则机器上正跑着面板时永远拿到
+    ERROR_ALREADY_EXISTS，断言会被环境带偏，还会给真实面板发弹窗消息。
+    """
+    global _PANEL_MUTEX
+    try:
+        k = ctypes.WinDLL('kernel32', use_last_error=True)
+        k.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL,
+                                  wintypes.LPCWSTR]
+        k.CreateMutexW.restype = wintypes.HANDLE
+        h = k.CreateMutexW(None, False, name)
+        err = ctypes.get_last_error()
+        if h:
+            _PANEL_MUTEX = h
+        if err != 183:                    # ERROR_ALREADY_EXISTS
+            return True
+    except Exception:
+        return True
+    _notify_existing_panel()
+    return False
+
+
+def _notify_existing_panel():
+    """让已有面板弹出：向其托盘消息窗模拟一次左键（走 CMD_OPEN 队列）。
+
+    message-only 窗口收不到广播、FindWindowW 也找不到，必须用
+    FindWindowExW(HWND_MESSAGE, ...) 枚举。托盘没就绪（开机自启创建失败）
+    时退回按标题直接显示主窗口。
+    """
+    try:
+        import tray_icon
+        u = ctypes.windll.user32
+        u.FindWindowExW.argtypes = [wintypes.HWND, wintypes.HWND,
+                                  wintypes.LPCWSTR, wintypes.LPCWSTR]
+        u.FindWindowExW.restype = wintypes.HWND
+        u.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                                 wintypes.WPARAM, wintypes.LPARAM]
+        hwnd = u.FindWindowExW(tray_icon.HWND_MESSAGE, None, None, 'WBOX Tray')
+        if hwnd:
+            u.PostMessageW(hwnd, tray_icon.WM_TRAY, 1, tray_icon.WM_LBUTTONUP)
+            return
+        u.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        u.FindWindowW.restype = wintypes.HWND
+        u.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+        u.SetForegroundWindow.argtypes = [wintypes.HWND]
+        hwnd = u.FindWindowW(None, 'WBOX')
+        if hwnd:
+            u.ShowWindow(hwnd, 5)         # SW_SHOW
+            u.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+
 # ---- ps_run ----
 def ps_run(cmd, timeout=25):
     r = subprocess.run([PS, '-NoProfile', '-NonInteractive', '-Command', cmd],

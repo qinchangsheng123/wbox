@@ -65,7 +65,8 @@ from ui_gfx import (LEGACY_KEYS, THEMES, _cb, _compat_themes,
 from ui_widgets import Glyph, Switch, ToolTip
 from win_env import (POINT, RECT, can_write_config, dir_writable,
                      elevate_settings, enable_dpi_awareness as _dpi_awareness,
-                     file_writable, get_window_icons, is_admin, ps_run,
+                     file_writable, get_window_icons, is_admin,
+                     panel_single_instance, ps_run,
                      set_window_icons, system_dpi, window_dpi, work_area,
                      win_hwnd)
 from panel_state import (SESSION_TEXT, autostart_state, cfg_get_path,
@@ -348,7 +349,13 @@ class App(object):
         if not probe:
             self.apply_tray_pref()
             self.refresh()
-        root.bind('<Destroy>', lambda e: self._tray_shutdown(), add='+')
+        # <Destroy> 会沿父链冒泡：rebuild() 销毁任意子控件都会触发这里。
+        # 只在根窗口自己销毁（面板退出）时才摘托盘，否则每次换肤/改 DPI/
+        # 缩放都误杀托盘线程；stop() 若卡在右键菜单里超时，旧图标残留，
+        # 重建再挂一枚就是「托盘多个 W」的另一成因。
+        root.bind('<Destroy>',
+                  lambda e: self._tray_shutdown() if e.widget is root else None,
+                  add='+')
 
     # ---- 尺寸 ----
     def pad_x(self):
@@ -3654,11 +3661,28 @@ class App(object):
                 for v, b in buttons.items():
                     paint(b, v == value)
 
+        # 选项排不下时换行：浮层宽度是设计稿定死的 px(296)，选项一多
+        # （如桌面监控 8 个位置）单行 pack 会把尾部选项裁到窗外点不到。
+        _, _, sw, _ = work_area()
+        w = min(self.px(296), max(self.px(240), sw - self.px(24)))
+        left_req = min(self.f_body.measure(spec['label']), self.px(160))
+        if spec.get('hint'):
+            left_req = max(left_req, min(
+                self.f_small.measure(spec['hint']), self.px(160)))
+        avail = w - 2 - 2 * self.px(14) - left_req - self.px(10) - self.px(2)
+        line = None
+        used = 0
         for value, label in spec['options']:
-            b = tk.Label(master, text=label, font=self.f_small,
+            need = self.f_small.measure(label) + 2 * self.px(8) + self.px(3)
+            if line is None or (used and used + need > avail):
+                line = tk.Frame(master, bg=c['bg'])
+                line.pack(side='top', anchor='w')
+                used = 0
+            b = tk.Label(line, text=label, font=self.f_small,
                          padx=self.px(8), pady=self.px(3),
                          cursor=('arrow' if ro else 'hand2'))
             b.pack(side='left', padx=(self.px(3), 0))
+            used += need
             buttons[value] = b
             paint(b, value == cur)
             if not ro:
@@ -3969,6 +3993,10 @@ def main():
     if '--layout-check' in args:
         layout_check()
         return
+    # 单实例：重复启动时通知已有面板弹出并立即退出。必须赶在提权重开之前，
+    # 否则重复副本会再弹一次 UAC；也赶在建 Tk 窗口之前，避免第二枚托盘图标。
+    if not panel_single_instance():
+        return 0
     # 默认目录装在 Program Files 下时，普通用户改不了 config.json：先自我提权重开；
     # 用户拒绝 UAC（或提权后仍不可写）才退回"功能置灰 + 状态行提示需要管理员权限"。
     if not can_write_config():

@@ -943,6 +943,40 @@ hits = [c for c in u12.calls if c[0] == 'pos']
 check(bool(hits) and hits[-1][2] == 100 and hits[-1][3] == 120,
       '屏内自定义坐标原样保留（不误搬）')
 
+print('[J] v1.7.0 四边居中显示位置')
+import json as _json                      # noqa: E402
+import config_schema                      # noqa: E402
+
+with open(os.path.join(dst, 'plugin.json'), encoding='utf-8') as _f:
+    _mf = _json.load(_f)
+_pos_spec = [s for s in _mf['settings']
+             if s['key'] == 'desktop_hud.position'][0]
+_vals = [o['value'] for o in _pos_spec['options']]
+for _v in ('top-center', 'bottom-center', 'left-center', 'right-center'):
+    check(_v in _vals, '面板显示位置选项含 %s' % _v)
+    _cfg, _issues = config_schema.validate({'desktop_hud': {'position': _v}})
+    check(not [i for i in _issues if i['path'] == 'desktop_hud.position'],
+          '配置校验接受 %s' % _v)
+
+o13 = make_ov()
+o13._w, o13._h = 220, 140
+o13._work_area = lambda: (0, 0, 1920, 1080)
+for _pos, _x, _y in (('top-center', 850, 16), ('bottom-center', 850, 924),
+                     ('left-center', 16, 470), ('right-center', 1684, 470)):
+    o13._prefs['position'] = _pos
+    o13._last_pos = None
+    o13._reposition()
+    c = last(o13, 'pos')
+    check(c is not None and c[2] == _x and c[3] == _y,
+          '%s 定位到 (%d,%d)' % (_pos, _x, _y))
+
+for _cmd, _pos in ((ov_mod.M_POS_TC, 'top-center'),
+                   (ov_mod.M_POS_BC, 'bottom-center'),
+                   (ov_mod.M_POS_LC, 'left-center'),
+                   (ov_mod.M_POS_RC, 'right-center')):
+    o13._apply_menu(_cmd)
+    check(o13._prefs.get('position') == _pos, '右键菜单切到 %s 生效' % _pos)
+
 shutil.rmtree(TMP, ignore_errors=True)
 print('')
 if FAILS:
