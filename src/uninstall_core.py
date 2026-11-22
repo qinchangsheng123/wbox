@@ -203,6 +203,44 @@ def guard_pids(target, exe=None):
     return [int(x) for x in (out or '').split() if x.strip().isdigit()]
 
 
+def close_panel_windows(target, exe=None):
+    """请面板自己退出：给它的 Tk 顶层窗口发 WM_CLOSE。
+
+    v2.14.1：stop_guard 以前只写 stop.flag（只有守护认），面板一直活到
+    8 秒后被 taskkill /F。强杀不会走任何 finally，托盘图标就留在通知区——
+    鼠标不扫过去不掉，用户看到的就是「托盘残余」。Tk 没绑 WM_DELETE_WINDOW，
+    收到 WM_CLOSE 会销毁根窗口 → 面板走 <Destroy> → 正常摘图标后退出。
+    只发 CLASS=TkTopLevel 的窗口，别碰托盘消息窗（那会把图标先摘了）。
+    """
+    pids = set(guard_pids(target, exe))
+    if not pids:
+        return 0
+    u = ctypes.WinDLL('user32', use_last_error=True)
+    from ctypes import wintypes
+    u.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    u.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT,
+                               wintypes.WPARAM, wintypes.LPARAM]
+    u.GetWindowThreadProcessId.argtypes = [wintypes.HWND,
+                                           ctypes.POINTER(wintypes.DWORD)]
+    found = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def _cb(hwnd, lp):
+        pid = wintypes.DWORD(0)
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value not in pids:
+            return True
+        buf = ctypes.create_unicode_buffer(128)
+        u.GetClassNameW(hwnd, buf, 128)
+        if buf.value.startswith('TkTopLevel'):
+            u.PostMessageW(hwnd, 0x0010, 0, 0)       # WM_CLOSE
+            found.append(hwnd)
+        return True
+
+    u.EnumWindows(_cb, 0)
+    return len(found)
+
+
 def stop_guard(target, exe=None):
     # v2.6.0：卸载入口并进主 exe 后，卸载进程自己也是目标目录里的
     # 主 exe，会被 guard_pids 命中；不排除自身就会在卸载中途自杀。
@@ -214,15 +252,42 @@ def stop_guard(target, exe=None):
             f.write('stop')
     except OSError:
         pass
-    for _ in range(20):
+    # 守护认 stop.flag，面板不认：先请面板自己退（正常退出才会摘托盘图标），
+    # 免得 8 秒后连同它一起 taskkill /F。
+    asked = 0
+    for rnd in range(4):
+        if rnd:
+            time.sleep(1.6)      # 面板可能刚起来还没建窗口，隔一会儿再请一次
+        try:
+            n = close_panel_windows(target, exe)
+        except Exception as e:
+            print('[stop] 请求面板退出失败：%r' % (e,))
+            n = 0
+        asked += n
+        if n:
+            print('[stop] 已请求 %d 个面板窗口退出（第 %d 轮，累计 %d）'
+                  % (n, rnd + 1, asked))
+    stopped = False
+    for _ in range(8):
         time.sleep(0.4)
         if not [p for p in guard_pids(target, exe) if p != me]:
-            return True
-    for pid in guard_pids(target, exe):
-        if pid != me:
-            run([TASKKILL, '/F', '/PID', str(pid)])
-    time.sleep(1)
-    return not [p for p in guard_pids(target, exe) if p != me]
+            stopped = True
+            break
+    if not stopped:
+        for pid in guard_pids(target, exe):
+            if pid != me:
+                run([TASKKILL, '/F', '/PID', str(pid)])
+        time.sleep(1)
+        stopped = not [p for p in guard_pids(target, exe) if p != me]
+    # 兜底：只要有一个进程没走到正常退出（面板异常死亡 / 最终仍被 taskkill
+    # /F），通知区就会留一枚死图标，用户不把鼠标移过去就不掉。装包/卸载结束
+    # 时替他扫一遍；nudge 自己会检查「用户 1.2 秒没动键鼠」，不抢指针。
+    try:
+        import tray_clean
+        tray_clean.nudge()
+    except Exception:
+        pass
+    return stopped
 
 
 def delete_task(task):

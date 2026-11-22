@@ -8,11 +8,19 @@ Tk 的 after 链——TrackPopupMenu 是阻塞调用，放在主线程会冻住�
 
 降级原则与 guard_beat 一致：任何 Win32 失败都按「没有托盘」处理，
 绝不抛异常打断面板。托盘是可选装饰，不是功能前提。
+
+v2.14.1「托盘残余」：进程一旦没走到 NIM_DELETE 就消失（被 taskkill / 崩溃），
+通知区会留下一枚幽灵图标——鼠标不扫过去它就不消失（实测：新挂一枚图标刷不掉，
+WM_SETTINGCHANGE / RedrawWindow / SHChangeNotify 也刷不掉，只有悬停或 explorer
+重启才清）。所以摘图标绝不能只交给消息线程的 finally：delete() 是任意线程可调、
+幂等、直接走 Shell_NotifyIcon(NIM_DELETE) 的，stop() 与 atexit 都调它。
 """
+import atexit
 import ctypes
 import os
 import queue
 import threading
+import weakref
 from ctypes import wintypes
 
 NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
@@ -34,6 +42,21 @@ LR_LOADFROMFILE = 0x0010
 HWND_MESSAGE = ctypes.c_void_p(-3)
 
 CMD_OPEN, CMD_EXIT = 1, 2
+
+# 进程退出兜底：解释器正常收尾时把还挂着的图标摘掉。被 TerminateProcess /
+# os._exit 干掉时不会执行（那种情况谁也救不了，只能靠别再强杀）。
+_LIVE = weakref.WeakSet()
+
+
+def _flush_all():
+    for t in list(_LIVE):
+        try:
+            t.delete()
+        except Exception:
+            pass
+
+
+atexit.register(_flush_all)
 
 
 class NOTIFYICONDATAW(ctypes.Structure):
@@ -151,6 +174,9 @@ class TrayIcon(object):
         self._ready = threading.Event()
         self._wndproc = None      # 保持引用，防回调被 GC
         self._taskbar_msg = 0     # explorer 重启广播（TaskbarCreated）
+        self._nid = None          # 已注册的 NOTIFYICONDATAW
+        self._deleted = False     # 图标是否已摘（delete() 幂等标记）
+        _LIVE.add(self)
 
     # ---- 主线程 API ----
     def start(self):
@@ -205,15 +231,43 @@ class TrayIcon(object):
             except Exception:
                 pass
 
-    def stop(self):
-        if self._hwnd is not None:
+    def delete(self):
+        """摘掉通知区图标：任意线程可调、可重复调用，返回本次是否真发了命令。
+
+        Shell_NotifyIcon 明确支持跨线程调用，所以这里不排队、不等消息线程。
+        只靠线程自己的 finally 摘是不够的：stop() 里 join 超时、进程被
+        TerminateProcess 杀掉，都会让 finally 根本没机会跑，通知区就留一枚
+        幽灵图标（鼠标扫过才消失）。
+        """
+        nid = self._nid
+        if nid is None or self._deleted:
+            return False
+        self._deleted = True
+        self.active = False
+        try:
+            _s().Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+            return True
+        except Exception:
+            return False
+
+    def stop(self, timeout=1.0):
+        """退出：先请消息线程收工，但**摘图标不等它**。
+
+        timeout 只决定等线程多久；超时也照样当场 delete()——线程可能正卡在
+        TrackPopupMenu 里，等它是没有意义的。
+        """
+        hwnd = self._hwnd
+        if hwnd is not None:
             try:
-                _u().PostMessageW(self._hwnd, WM_CLOSE, 0, 0)
+                _u().PostMessageW(hwnd, WM_CLOSE, 0, 0)
             except Exception:
                 pass
-        if self._thread is not None:
-            self._thread.join(timeout=1.0)
-            self._thread = None
+        t = self._thread
+        if t is not None:
+            t.join(timeout=timeout)
+            if not t.is_alive():
+                self._thread = None
+        self.delete()
         self.active = False
 
     # ---- 消息线程 ----
@@ -233,8 +287,12 @@ class TrayIcon(object):
         k.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
         hinst = k.GetModuleHandleW(None)
         # 类名进程全局：同名类第二次 RegisterClassW 必失败（同进程再建托盘
-        # 会静默死掉），按实例区分并在销窗后注销。
-        cls_name = 'WBOXTrayMsg_%x' % id(self)
+        # 会静默死掉），按实例 + 第几次尝试区分并在销窗后注销。带尝试序号是
+        # 因为 stop() 超时后旧线程可能还活着（卡在右键菜单），此时重建托盘
+        # 若沿用同名类会一直失败，表现成「托盘再也起不来」。
+        self._gen = getattr(self, '_gen', 0) + 1
+        cls_name = 'WBOXTrayMsg_%x_%d' % (id(self), self._gen)
+
         self._wndproc = WNDPROC(self._on_msg)
         wc = WNDCLASSW()
         wc.lpfnWndProc = ctypes.cast(self._wndproc, ctypes.c_void_p)
@@ -271,6 +329,7 @@ class TrayIcon(object):
             self.error = 'Shell_NotifyIcon(NIM_ADD) 失败（explorer 可能未就绪）'
             return
         self._nid = nid
+        self._deleted = False     # 重新挂上了，允许再摘
         self.active = True
         self._ready.set()
         try:
@@ -281,11 +340,17 @@ class TrayIcon(object):
         finally:
             # 正常退出（WM_CLOSE -> PostQuitMessage）或消息循环抛异常都必须
             # 摘图标：否则通知区留一枚幽灵图标，面板自愈重建时又挂一枚新的，
-            # 看起来就是「托盘多个 W」。
-            try:
-                s.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
-            except Exception:
-                pass
+            # 看起来就是「托盘多个 W」。走 delete() 而不是内联调用，是为了和
+            # stop()/atexit 共用同一套幂等标记，不重复摘、也不会漏摘。
+            # 只在「当前挂的还是自己这枚」时走 delete()：同一实例被重新
+            # start 过时，旧线程不该把新图标摘掉。
+            if self._nid is nid:
+                self.delete()
+            else:
+                try:
+                    s.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(nid))
+                except Exception:
+                    pass
             u.DestroyWindow(hwnd)
             u.UnregisterClassW(cls_name, hinst)
             self._hwnd = None

@@ -3,7 +3,7 @@
   <!-- assemblyIdentity 的版本是四段式 Win32 程序集标识（与 vMAJOR.MINOR.PATCH
        同步：v2.3.0 -> 2.3.0.0）。它不进文件属性页（EXE 的 VERSIONINFO 仍是
        空，version=None），只用于 SxS 身份与排障时对齐版本。 -->
-  <assemblyIdentity type="win32" name="WBOX" version="2.14.0.0" processorArchitecture="amd64"/>
+  <assemblyIdentity type="win32" name="WBOX" version="2.14.1.0" processorArchitecture="amd64"/>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

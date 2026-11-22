@@ -270,12 +270,103 @@ def part_destroy_guard():
         root.destroy()
 
 
+def part_stop_sync():
+    print('[F] 托盘：stop() 不等消息线程也必须当场摘图标（v2.14.1 托盘残余）')
+    import ctypes
+    import threading
+    calls = []
+
+    class FakeS(object):
+        def Shell_NotifyIconW(self, op, nid):
+            calls.append(op)
+            return True
+
+    orig_s = tray_icon._s
+    tray_icon._s = lambda: FakeS()
+    try:
+        t = tray_icon.TrayIcon(os.path.join(TMP, 'icon-light.ico'))
+        nid = tray_icon.NOTIFYICONDATAW()
+        nid.cbSize = ctypes.sizeof(nid)
+        nid.hWnd = 1
+        nid.uID = 1
+        t._nid = nid
+        t.active = True
+        # 模拟「消息线程还卡在右键菜单里」：线程活着但永远不处理 WM_CLOSE
+        stuck = threading.Thread(target=lambda: time.sleep(1.5), daemon=True)
+        t._thread = stuck
+        stuck.start()
+        t0 = time.time()
+        t.stop(timeout=0.2)
+        cost = time.time() - t0
+        check(cost < 0.9, 'stop() 没有干等线程：%.2fs' % cost)
+        check(calls == [tray_icon.NIM_DELETE],
+              '线程没退出也当场摘图标：%r' % (calls,))
+        check(not t.active, 'stop() 后 active=False')
+        t.delete()
+        t.delete()
+        check(calls == [tray_icon.NIM_DELETE], 'delete() 幂等，不重复摘：%r'
+              % (calls,))
+    finally:
+        tray_icon._s = orig_s
+
+
+def part_close_panel():
+    print('[G] 安装/卸载：stop_guard 会请面板自己退出（而不是 taskkill /F）')
+    import uninstall_core
+    import tkinter as tk2
+    root = tk2.Tk()
+    root.geometry('120x80')
+    root.update()
+    orig = uninstall_core.guard_pids
+    uninstall_core.guard_pids = lambda target, exe=None: [os.getpid()]
+    try:
+        n = uninstall_core.close_panel_windows('X:\\none')
+        check(n >= 1, '对 TkTopLevel 窗口发了 WM_CLOSE：命中 %d 个' % n)
+        for _ in range(20):
+            try:
+                root.update()
+            except tk2.TclError:
+                break                   # 窗口已被 WM_CLOSE 销毁
+            time.sleep(0.05)
+        try:
+            alive = bool(root.winfo_exists())
+        except tk2.TclError:
+            alive = False
+        check(not alive, '面板收到 WM_CLOSE 后自行销毁（不走强杀）')
+    finally:
+        uninstall_core.guard_pids = orig
+        try:
+            root.destroy()
+        except Exception:
+            pass
+
+
+def part_tray_clean():
+    print('[H] 托盘残影：只在用户没动鼠标时扫，取不到图标行就不动手')
+    import tray_clean as tc
+    orig_strip, orig_idle = tc.icon_strip, tc._idle_sec
+    try:
+        strip = tc.icon_strip()
+        check(strip is None or (len(strip) == 3 and strip[2] > strip[0]),
+              '图标行矩形合理：%r' % (strip,))
+        tc.icon_strip = lambda: None
+        check(tc.nudge(force=True) == 0, '取不到图标行 -> 返回 0，不动指针')
+        tc.icon_strip = lambda: (100, 100, 300)
+        tc._idle_sec = lambda: 0.2
+        check(tc.nudge() == 0, '用户 1.2 秒内动过鼠标 -> 不扫')
+    finally:
+        tc.icon_strip, tc._idle_sec = orig_strip, orig_idle
+
+
 def main():
     part_plain()
     part_tray()
     part_single_instance()
     part_tray_cleanup()
     part_destroy_guard()
+    part_stop_sync()
+    part_close_panel()
+    part_tray_clean()
     print('')
     if FAILS:
         print('FAILED %d：%s' % (len(FAILS), FAILS))

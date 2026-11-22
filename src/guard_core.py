@@ -29,6 +29,7 @@ import game_lib
 import plugin_api
 import plugin_host
 import plugin_package
+import tray_clean
 
 # 打包成 exe 后 __file__ 指向临时解压目录，配置/日志必须跟着 exe 本体走
 if getattr(sys, 'frozen', False):
@@ -949,6 +950,15 @@ class Guard(object):
                 events.emit('session', code='SESSION_CLOSE',
                             session=self.session_seq,
                             retries=self.close_retries)
+                # 刚才的关闭流程多半强杀过「关到托盘」的监控程序（小飞机 / RTSS /
+                # 游戏加加），游戏本身也可能留图标。它们没机会摘自己的托盘图标，
+                # 通知区会留残影，只有鼠标扫过才消失。这里替用户扫一遍；不绑任何
+                # 插件开关（残影来源不止一个），nudge 自带「用户 1.2 秒没动键鼠
+                # 才动手」的保护，游戏刚退出时用户正在操作就自动跳过。
+                try:
+                    tray_clean.nudge_async(log)
+                except Exception:
+                    pass
 
     # ---------- 主循环 ----------
     def tick(self, now=None):
@@ -1155,6 +1165,12 @@ class Guard(object):
             log('插件启动钩子异常: %r' % (e,))
         log('SeDebugPrivilege: %s（ACE 限速需要它，否则改优先级会被拒）' %
             ('已启用' if enable_debug_privilege() else '不可用'))
+        # 上次没善终（崩溃 / 被强杀 / 装包时 taskkill）会在通知区留下死图标，
+        # 只有鼠标扫过才消失。起来了就替用户扫一遍，把历史残留清掉。
+        try:
+            tray_clean.nudge_async(log, delay=6.0)
+        except Exception:
+            pass
         # v2.5.0-③：低频兜底激活时起 1 秒看门狗（stop.flag / 热重载标记 /
         # config 变更立即叫醒主循环），保住「停止守护 / 改动立即生效」的时延。
         # v2.11.3 修正启动条件：订阅在后台线程建立，这里 ev.ok 一定是 False，

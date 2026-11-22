@@ -145,8 +145,9 @@ def plugin_hint(entry, state=None, switch=None):
     switch 是这个插件开关的当前值（True/False），None = 调用方不要求显示：
       - 只有真加载起来的插件才追加启用态。manifest 坏 / 导入失败 / api 太新的插件
         开关毫无意义（主页面也没有它的开关行），写成「已禁用」会让人以为"拨一下就好"。
-      - 未提权且 manifest.requires_admin 为真时再追加「需要管理员」：这类插件不是坏了，
-        是权限不够，两件事得在同一行里同时看见（否则用户只会看到一个「正常」+ 不工作）。
+      - 未提权且 manifest.requires_admin 为真时，在启用态后再追加「需要管理员」：这类插件
+        不是坏了，是权限不够，两件事得在同一行里同时看见（否则用户只会看到一个「正常」+ 不工作）。
+        switch=None 时启用态和「需管理员」都不追加——调用方没要求显示就不猜。
     """
     if entry.status != plugin_host.STATUS_OK:
         text = PLUGIN_STATUS_HINT.get(entry.status, entry.status or '未知')
@@ -163,8 +164,8 @@ def plugin_hint(entry, state=None, switch=None):
     parts = [text]
     if isinstance(switch, bool) and entry.status in plugin_host.USABLE_STATUS:
         parts.append('已启用' if switch else '已关闭')
-    if getattr(entry, 'requires_admin', False) and not is_admin():
-        parts.append('需管理员')
+        if getattr(entry, 'requires_admin', False) and not is_admin():
+            parts.append('需管理员')
     return ' · '.join(parts)
 
 
@@ -187,7 +188,6 @@ def read_plugin_states():
         if isinstance(rec, dict) and isinstance(rec.get('id'), str) and rec['id']:
             out[rec['id']] = rec
     return out
-
 
 
 # ---------------- 界面 ----------------
