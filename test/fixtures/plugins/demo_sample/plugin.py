@@ -52,9 +52,6 @@ class Plugin(WBOXPlugin):
     def on_exit(self, reason):
         CALLS.append(('on_exit', reason))
 
-    def gui_menu_rows(self, cfg):
-        return [{'text': '示例插件', 'icon': 'log', 'hint': '', 'action': None}]
-
     def on_self_test(self, out):
         out.append('demo_sample: greeting=%s' %
                    self.ctx.cfg('demo_sample.greeting', '(缺)'))

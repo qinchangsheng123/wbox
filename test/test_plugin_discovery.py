@@ -226,8 +226,10 @@ cfg_mem = {}
 check(demo_plugin.gui_toggle(cfg_mem, True) is True, 'gui_toggle 写入成功')
 check(cfg_mem == {'demo_sample_enabled': True},
       'gui_toggle 只写自己声明的键（%r）' % (cfg_mem,))
-check(demo_plugin.gui_menu_rows(cfg_mem)[0]['icon'] == 'log', 'gui_menu_rows 由插件提供')
-check(plugin_api.WBOXPlugin(None).gui_menu_rows({}) == [], '基类 gui_menu_rows 返回 []')
+# v2.18.0：gui_menu_rows 契约随齿轮菜单一起删除——插件自定义界面只走
+# manifest.settings（行内展开的浮层），不再有「往菜单塞一行」这条口子。
+check(not hasattr(plugin_api.WBOXPlugin, 'gui_menu_rows'),
+      '基类不再提供 gui_menu_rows（齿轮菜单退役）')
 check(plugin_api.WingmanPlugin is plugin_api.WBOXPlugin,
       '旧类名 WingmanPlugin 保留为别名（第三方插件不改源码也能加载）')
 

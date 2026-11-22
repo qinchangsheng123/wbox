@@ -78,16 +78,17 @@ def main():
     orig_note = app.note
     app.note = lambda m: (logs.append(m), orig_note(m))[1]
     try:
-        print('[1] 玻璃档皮肤面板：卡片 + 缩略图 + pill + 描述')
+        print('[1] 皮肤面板：卡片 + 缩略图 + pill + 描述')
         app.probe = False
         app.open_skin_settings()
         root.update()
         app.skin_win.attributes('-alpha', 0.0)
         root.update()
         t = texts(app.skin_body)
-        check('液态玻璃' in t and '极简' in t, '两张内置皮肤卡都在：%r' % t[:6])
-        check('标准' in t and '最省' in t, '性能 pill 标准/最省 都在')
-        check(any(x.startswith('内置 · v1.1.0 · ') for x in t),
+        check('液态玻璃' in t and '默认' in t, '两张内置皮肤卡都在：%r' % t[:6])
+        check(t.count('默认骨架') >= 2,
+              '成本 pill 统一显示「默认骨架」：%d 处' % t.count('默认骨架'))
+        check(any(x.startswith('内置 · v1.') for x in t),
               '副标题含 来源·版本·描述')
         thumbs = [w for w in sg.walk(app.skin_body)
                   if isinstance(w, tk.Canvas) and w.winfo_reqwidth() == app.px(112)]
@@ -99,7 +100,7 @@ def main():
         check(len(checks) == 1, '当前皮肤一枚勾：%d' % len(checks))
         seg = [x for x in ('跟随系统', '浅色', '深色') if x in t]
         check(seg == ['跟随系统', '浅色', '深色'], '明暗三段都在：%r' % seg)
-        check('安装皮肤（.wbskin）…' in t, '安装入口文案对齐设计稿')
+        check('安装皮肤（.wbskin / .zip）…' in t, '安装入口文案对齐设计稿')
         w_geo = app.skin_win.winfo_width()
         check(w_geo == min(app.px(600), sg.work_area()[2] - app.px(20)),
               '面板宽 600 逻辑像素（夹进工作区）：%d' % w_geo)
@@ -187,7 +188,7 @@ def main():
         app.close_skin_settings()
         app.set_skin('plain')
         root.update()
-        check(app.glass is False, '已切极简')
+        check(app.skin.id == 'plain', '已切回默认皮肤')
         app.toggle_pane()
         root.update()
         t = texts(app.set_inner)
@@ -196,8 +197,8 @@ def main():
               'plain 设置页也露出需要更新行')
         # v2.12.1：皮肤行从「●/○ 字符」改成设计稿的 13px 圆圈单选，
         # 因此这里不再断言字符前缀，改断言"名称 + 当前"这对语义文案。
-        check('极简' in t and '当前' in t,
-              '当前皮肤行：极简 + 当前')
+        check('默认' in t and '当前' in t,
+              '当前皮肤行：默认 + 当前')
         radios = [w for w in sg.walk(app.set_inner)
                   if isinstance(w, tk.Canvas)
                   and int(w.cget('width')) == app.px(13)
@@ -228,7 +229,6 @@ def main():
     finally:
         app.note = orig_note
         app.close_skin_settings()
-        app.close_settings()
         root.destroy()
     shutil.rmtree(TMP, ignore_errors=True)
     print('')

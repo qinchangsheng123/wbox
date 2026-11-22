@@ -178,6 +178,33 @@ def main():
     finally:
         guard_beat.PIPE_NAME = orig_pipe8
 
+    print('[9] 设置页快照：一次读心跳交出「是否运行 / 状态行 / 诊断」')
+    # v2.16.0 起设置页三行 + 启停按钮共用 guard_snapshot()，必须同源：
+    # 状态行说「没在运行」而按钮显示「停止」是最糟的错配，这条守着它。
+    import panel_state  # noqa: E402
+    orig_pipe9 = guard_beat.PIPE_NAME
+    guard_beat.PIPE_NAME = TEST_PIPE
+    try:
+        snap = panel_state.guard_snapshot()
+        step(snap['running'] is False and snap['state'] == '守护没在运行',
+             '无心跳：running=False / state=%r' % snap['state'])
+        step(snap['events'] == '未运行' and snap['plugins'] == '未运行',
+             '无心跳时诊断两行也说「未运行」，不编造正常')
+        payload = fake_payload(session='idle')
+        payload['events'] = {'ok': True, 'mode': 'event', 'wakes': 1,
+                             'resubscribes': 0, 'hint': ''}
+        srv5 = guard_beat.BeatServer(TEST_PIPE, provider=lambda: payload)
+        srv5.start()
+        snap2 = panel_state.guard_snapshot()
+        step(snap2['running'] is True, '有心跳：running=True')
+        step(snap2['state'].startswith('运行中'), '同一快照的状态行 = %r'
+             % snap2['state'])
+        step(snap2['events'] == '事件驱动', '同一快照的进程事件 = %r'
+             % snap2['events'])
+        srv5.stop()
+    finally:
+        guard_beat.PIPE_NAME = orig_pipe9
+
     print('')
     if FAILED:
         print('FAILED %d 项：%s' % (len(FAILED), FAILED))

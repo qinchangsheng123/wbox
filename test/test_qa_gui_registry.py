@@ -96,7 +96,6 @@ def new_app():
 
 def drop(root, app):
     try:
-        app.close_settings()
         for job in root.tk.call('after', 'info'):
             try:
                 root.after_cancel(str(job))
@@ -104,21 +103,6 @@ def drop(root, app):
                 pass
     finally:
         root.destroy()
-
-
-def menu_rows(app):
-    return [w for w in sg.walk(app.settings_inner)
-            if isinstance(w, tk.Frame) and hasattr(w, 'hint_label')]
-
-
-def menu_labels(app):
-    out = []
-    for row in menu_rows(app):
-        for w in row.winfo_children():
-            if isinstance(w, tk.Label):
-                out.append(w.cget('text'))
-                break
-    return out
 
 
 def row_glyph(app, pid):
@@ -153,7 +137,7 @@ def main():
 
         root, app = new_app()
 
-        # ---------------- [1] 5 行、顺序、菜单行数 ----------------
+        # ---------------- [1] 5 行、顺序 ----------------
         print('[1] 5 个 home 插件 -> 主页面 5 行，顺序按 order')
         main_ids = [e.id for e in app.entries]
         step(main_ids == ['qa_a', 'qa_b', 'qa_c', 'qa_d', 'qa_e'],
@@ -162,27 +146,20 @@ def main():
              '每个主页插件一个开关：%r' % (sorted(app.switches),))
         step([row_name(app, p) for p in main_ids] == ['甲', '乙', '丙', '丁', '戊'],
              '名称全部来自 manifest.name')
-        expect_rows = sg.menu_row_count(app.entries_all)
-        # v2.3.0：内核行数改成从 sg.CORE_MENU_ROWS 取（=12，新增「插件开发指南」），
-        # 测试不再重复写死这个数字——否则每加一行菜单要改三处断言。
-        # v2.11.3：插件分组固定行从"打开目录 1"变成"打开目录 + 浏览插件库 2"
-        step(expect_rows == sg.CORE_MENU_ROWS + 1 + len(app.entries_all) + 2,
-             'menu_row_count = %d 内核行 + 插件标题 1 + 插件 %d + 打开目录/插件库 2 = %d'
-             % (sg.CORE_MENU_ROWS, len(app.entries_all), expect_rows))
-        app.open_settings()
-        root.update()
-        step(len(menu_rows(app)) == expect_rows,
-             '实际渲染的菜单行数 = menu_row_count（%d）' % len(menu_rows(app)))
-        labels = menu_labels(app)
-        step(all(n in labels for n in ('甲', '乙', '丙', '丁', '戊', '隐藏功能',
-                                      '无开关功能')), '菜单里 7 个插件都有自己一行')
+        # v2.18.0：菜单行数公式退役。注册表是唯一数据来源，
+        # 主页面行数已经验证；这里只核对注册表里 7 个插件一个不少。
+        names = [e.name for e in app.entries_all]
+        step(all(n in names for n in ('甲', '乙', '丙', '丁', '戊', '隐藏功能',
+                                      '无开关功能')),
+             '注册表里 7 个插件都有自己一条（含 home=false）：%r' % names)
 
-        # ---------------- [2] home=false 只在菜单 ----------------
-        print('[2] home=false -> 主页面不显示，菜单里仍有')
+        # ---------------- [2] home=false 不占主页面 ----------------
+        print('[2] home=false -> 主页面不显示，注册表里仍在')
         step('qa_hidden' not in app.switches, 'home=false 的插件没有开关')
         step('隐藏功能' not in [row_name(app, p) for p in app.switches],
              '主页面没有它的行')
-        step('隐藏功能' in labels, '齿轮菜单「插件」分组里有它')
+        step('隐藏功能' in [e.name for e in app.entries_all],
+             '注册表里仍有它（自检能列出，不静默丢）')
 
         # ---------------- [3] icon 不存在 -> 回落 dot ----------------
         print('[3] icon 写不存在值 -> 回落 dot，不抛异常')

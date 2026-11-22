@@ -65,15 +65,23 @@ def main():
             for size in (16, 20, 22, 28):
                 g = sg.Glyph(root, app, 'mark', size=size)
                 items = g.find_all()
-                step(len(items) == 1, '%s 品牌 W %dpx 是一块负形多边形' % (theme, size))
-                step(g.type(items[0]) == 'polygon',
-                     '%s 品牌 W %dpx 用多边形画（5 笔封口，不靠线宽）' % (theme, size))
-                co = g.coords(items[0])
-                xs, ys = co[0::2], co[1::2]
-                step(min(xs) <= size * 0.12 and max(xs) >= size * 0.88,
-                     '%s 品牌 W %dpx 横向占满画布（面板里没有方块容器）' % (theme, size))
+                # v2.17.0：图标一律走 4×4 超采样光栅（原来只有 minimal 档走），
+                # 品牌 W 也从「矢量多边形」变成「整幅 PhotoImage」。
+                step(len(items) == 1,
+                     '%s 品牌 W %dpx 是一块整幅图像' % (theme, size))
+                step(g.type(items[0]) == 'image',
+                     '%s 品牌 W %dpx 走超采样光栅（抗锯齿，不靠线宽）' % (theme, size))
+                # 光栅图没有坐标可量，直接扫像素：有墨色的列范围要覆盖画布
+                # 两侧（W 是负形，横向占满说明没有方块容器）。
+                bg = tuple(v // 256 for v in g.winfo_rgb(app.colors['bg']))
+                cols = [x for x in range(size)
+                        if any(g._img.get(x, y) != bg for y in range(size))]
+                step(bool(cols) and min(cols) <= size * 0.12
+                     and max(cols) >= size * 0.88,
+                     '%s 品牌 W %dpx 横向占满画布（面板里没有方块容器）：%r'
+                     % (theme, size, (min(cols), max(cols)) if cols else None))
                 g.destroy()
-        print('[3] 品牌 W 16/20/22/28px 均为单块负形多边形且横向占满')
+        print('[3] 品牌 W 16/20/22/28px 均为单块光栅图且横向占满')
 
         app = FakeApp(sg.THEMES['light'])
         g = sg.Glyph(root, app, '__unknown_kind__', size=24)

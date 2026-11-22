@@ -116,7 +116,7 @@ def main():
     sg.filedialog.askopenfilename = lambda **k: ''
     try:
         print('[1] 默认极简：皮肤 / 宽度 / 行高 / 辅助字号')
-        check(app.skin.id == 'plain' and app.glass is False,
+        check(app.skin.id == 'plain',
               '无 ui_skin 的老配置默认 plain：%r' % app.skin)
         check(app.skin.metrics['row'] == 40
               and app.skin.metrics['titlebar'] == 36,
@@ -232,7 +232,6 @@ def main():
         sg.messagebox.askyesno = orig_ask
         sg.filedialog.askopenfilename = orig_fd
         app.close_plugin_settings()
-        app.close_settings()
         for job in root.tk.call('after', 'info'):
             try:
                 root.after_cancel(str(job))
@@ -257,8 +256,8 @@ def main():
     app2 = sg2.App(root2, probe=False)
     root2.update()
     try:
-        check(app2.skin.id == 'plain' and app2.glass is False,
-              '玻璃老配置回退极简：%r' % app2.skin)
+        check(app2.skin.id == 'plain',
+              '玻璃老配置回退默认：%r' % app2.skin)
         check(disk(tmp2).get('ui_skin') == 'plain',
               '解析结果写回 config.json（ui_skin=plain）')
         with open(os.path.join(tmp2, 'guard.log'), encoding='utf-8') as f:

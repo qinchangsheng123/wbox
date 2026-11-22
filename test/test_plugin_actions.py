@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""离线验证面板动作：齿轮（头部菜单 + 每插件设置弹框）、＋、垃圾桶、装卸重建。
+"""离线验证面板动作：行尾箭头（每插件设置弹框）、＋、垃圾桶、装卸重建。
 
 probe=True + -alpha 0 建真实控件但不显示；插件全在临时目录，不碰 app\\。
 v2.4.0：齿轮语义改为「头部 1 个 + 插件行（仅声明 settings 的插件）」，并补
@@ -32,9 +32,9 @@ import settings_gui as sg  # noqa: E402
 import plugin_package      # noqa: E402
 import skinfix             # noqa: E402
 
-# v2.10.0：本测试断言的是 standard 档的行尾滑块 / 设置浮层语义；
-# 液态玻璃不再内置，用用户皮肤 fixture 提供 standard 档。极简档的行内
-# 展开语义由 test_plain_ui.py 覆盖。
+# v2.17.0：骨架只剩默认一套——行尾是「›」箭头（点整行行内展开），不再有齿轮
+# 滑块；插件设置浮层（on_plugin_settings）仍在，由本测试与 --layout-check 覆盖。
+# fixture 提供的老包（声明 standard）用来验证降级渲染不报错。
 skinfix.write_glass(TMP)
 
 sg.enable_dpi_awareness()
@@ -116,22 +116,21 @@ def main():
     app = sg.App(root, probe=True)
     root.update()
     try:
-        print('[1] 头部「＋」与齿轮')
+        print('[1] 头部「＋」与行尾箭头')
         check(len(glyphs(app, 'plus')) == 1 and app.add_btn.kind == 'plus',
-              '标题栏有一个 ＋ 按钮，落在齿轮旁边')
-        # v2.7.0 精确语义（方案 4）：头部不再画齿轮，字标 WBOX 就是菜单入口；
-        # 每一行都有一枚滑块（cfg 图标），点开浮层里至少带「卸载此插件」。
-        check(len(glyphs(app, 'gear')) == 0,
-              '头部不再单独画齿轮：%d' % len(glyphs(app, 'gear')))
-        check(len(glyphs(app, 'cfg')) == len(app.entries),
-              '每行一枚滑块 = %d 行 / %d 枚'
-              % (len(app.entries), len(glyphs(app, 'cfg'))))
+              '标题栏有一个 ＋ 按钮')
+        # v2.17.0：行尾是「›」箭头（行内展开），齿轮滑块随玻璃骨架退役。
+        check(len(glyphs(app, 'cfg')) == 0,
+              '行尾不再画齿轮滑块：%d 枚' % len(glyphs(app, 'cfg')))
+        check(len(glyphs(app, 'chev_r')) == len(app.entries),
+              '每行一枚行尾箭头 = %d 行 / %d 枚'
+              % (len(app.entries), len(glyphs(app, 'chev_r'))))
         check(sorted(app.plugin_gears) == ['demo_a', 'demo_b'],
               '每一行都有设置入口（含无可调项的）：%r' % sorted(app.plugin_gears))
-        check(app.gear_wrap is not None and app.gear_wrap.winfo_exists()
-              and isinstance(app.gear_btn, tk.Label)
-              and app.gear_btn.cget('text') == 'WBOX',
-              '字标 WBOX 就是菜单入口（Label，不是 Canvas 齿轮）')
+        check(app.brand_wrap is not None and app.brand_wrap.winfo_exists()
+              and isinstance(app.brand_btn, tk.Label)
+              and app.brand_btn.cget('text') == 'WBOX',
+              '字标 WBOX 仍在（身份标识，不绑点击）')
         check(app.add_wrap.winfo_manager() == 'pack', '＋ 用 pack 排布在同个 top 容器')
         check(len(glyphs(app, 'plus')[0].find_all()) > 0,
               '＋ 图标真的画出了图元（不是空白 Canvas）')
@@ -144,37 +143,19 @@ def main():
               '功能开关仍按插件 id 一个一个建，没被新按钮顶掉')
         check(app.plugins_ro is False, '临时目录可写 -> 装卸按钮可用')
 
-        print('[3] 菜单行数：数真实控件，不复述公式')
-        # v2.3.0：内核行数不再写死 11，改从 sg.CORE_MENU_ROWS 取（=12，
-        # 新增「插件开发指南」）。
-        # v2.3.0 复核补丁（QA P2-2）：这里原来断言 menu_row_count(...) ==
-        # CORE_MENU_ROWS+1+2+1 —— 而 menu_row_count 的实现就是这个式子，
-        # 恒真、不可能失败。改成先写死"此刻应有的行数"（12 内核 + 标题 1 +
-        # 2 插件 + 打开目录 1 = 16），再拿**真实 Tk 控件数**回怼：实现偷偷少画
-        # 一行、或常量被改小，两条断言至少有一条会红。
-        # v2.7.0：内核行 12 -> 11（浅色/深色两行合成「外观与皮肤…」一行）
-        # v2.9.0：内核行 11 -> 13（补「启动后收进托盘 / 游戏结束提示」两行）
-        # v2.11.3：插件分组固定行 1 -> 2（「打开插件目录」+ 新增「浏览插件库」）
-    # v2.13.0：内核行 13 -> 14（维护区新增「导出诊断」）
-        EXPECT_ROWS = 14 + 1 + 2 + 2
-        check(sg.menu_row_count(app.entries_all) == EXPECT_ROWS,
-              'menu_row_count 算出 %d 行（14 内核 + 标题 + 2 插件 + 打开目录/插件库 2）'
-              % sg.menu_row_count(app.entries_all))
-        app.open_settings()
+        print('[3] 设置页固定内容：守护状态 + 关于组三件工具')
+        # v2.18.0：齿轮菜单整块退役，原来这段断言 menu_row_count 等于
+        # 「14 内核 + 标题 + 插件数 + 2」——那个公式只描述浮层行数，
+        # 现在没有浮层了。改成数设置页真实控件：工具行少了任何一条都会红。
+        app.toggle_pane()
         root.update()
-        rows = [w for w in sg.walk(app.settings_inner)
-                if isinstance(w, tk.Frame) and hasattr(w, 'hint_label')]
-        check(len(rows) == EXPECT_ROWS,
-              '真实渲染 %d 行 == %d' % (len(rows), EXPECT_ROWS))
-        texts = []
-        for w in rows:
-            for c in w.winfo_children():
-                if isinstance(c, tk.Label):
-                    texts.append(c.cget('text'))
-                    break
-        check(all(n in texts for n in ('甲功能', '乙功能', '插件开发指南')),
-              '菜单里能找到两个插件与「插件开发指南」：%r' % (texts,))
-        app.close_settings()
+        texts = [w.cget('text') for w in sg.walk(app.set_inner)
+                 if isinstance(w, tk.Label)]
+        check(all(n in texts for n in ('守护状态', '打开日志目录',
+                                       '编辑配置文件', '导出诊断')),
+              '设置页含守护状态与三个工具入口：%r'
+              % [t for t in texts if t])
+        app.toggle_pane()
         root.update()
 
         print('[4] reload_registry：装/卸插件后主页面跟着变')
@@ -183,21 +164,21 @@ def main():
         root.update()
         check([e.id for e in app.entries] == ['demo_a', 'demo_b', 'demo_c'],
               '新插件出现在注册表：%r' % [e.id for e in app.entries])
-        check(len(glyphs(app, 'cfg')) == 3 and sorted(app.switches) ==
-              ['demo_a', 'demo_b', 'demo_c'], '3 行、3 滑块、3 开关')
+        check(len(glyphs(app, 'chev_r')) == 3 and sorted(app.switches) ==
+              ['demo_a', 'demo_b', 'demo_c'], '3 行、3 箭头、3 开关')
         check(sorted(app.plugin_gears) == ['demo_a', 'demo_b', 'demo_c'],
               '装卸重建后每行仍有设置入口：%r' % sorted(app.plugin_gears))
         shutil.rmtree(os.path.join(PLUGINS, 'demo_b'))
         app.reload_registry()
         root.update()
         check([e.id for e in app.entries] == ['demo_a', 'demo_c'] and
-              len(glyphs(app, 'cfg')) == 2,
-              '删掉目录后重建：2 行、2 滑块，不留幽灵开关')
+              len(glyphs(app, 'chev_r')) == 2,
+              '删掉目录后重建：2 行、2 箭头，不留幽灵开关')
         check(sorted(app.plugin_gears) == ['demo_a', 'demo_c'],
               '删插件后不留幽灵设置入口：%r' % sorted(app.plugin_gears))
 
         # ---- 以下要真点弹框，临时摘掉 probe 保护；messagebox 一律捕获防阻塞 ----
-        print('[5] 插件行齿轮 -> 设置弹框：点开 / 无可调项提示 / 四类控件落盘')
+        print('[5] 插件设置浮层：点开 / 无可调项提示 / 四类控件落盘')
         app.probe = False
         shown = []
         orig_info = sg.messagebox.showinfo
@@ -207,7 +188,7 @@ def main():
             # v2.7.0：无 settings 的插件也开浮层，里面只有「卸载此插件」
             app.on_plugin_settings(entry_by_id(app, 'demo_c'))
             check(app.plugin_win is not None and len(shown) == 0,
-                  '无可调项的插件点滑块：开浮层（卸载在里面），不弹提示')
+                  '无可调项的插件开浮层（卸载在里面），不弹提示')
             if app.plugin_win is not None:
                 try:
                     app.plugin_win.attributes('-alpha', 0.0)
@@ -223,7 +204,7 @@ def main():
             win = app.plugin_win
             check(win is not None and win.winfo_exists()
                   and app.plugin_entry.id == 'demo_a',
-                  '点有可调项插件的齿轮：弹出对应设置浮层')
+                  '点有可调项插件的行尾箭头：弹出对应设置浮层')
             if win is not None:
                 try:
                     win.attributes('-alpha', 0.0)
@@ -301,7 +282,7 @@ def main():
             app.on_plugin_settings(entry_by_id(app, 'demo_a'))
             win2 = app.plugin_win
             check(win2 is not None and win2.winfo_exists(),
-                  '重建后齿轮仍能再次打开弹框')
+                  '重建后行尾箭头仍能再次打开弹框')
             if win2 is not None:
                 try:
                     win2.attributes('-alpha', 0.0)
@@ -332,13 +313,12 @@ def main():
             text = f.read()
         check('plugin_package=' + plugin_package.FORMAT_ID in text,
               'self_check 记录了插件包格式')
-        check('plugin_actions=add:plus,settings:cfg,remove:in_popup' in text,
-              'self_check 记录了 ＋ / 行尾滑块 / 浮层卸载')
-        check('menu_entry=label:WBOX' in text and 'skin=' in text,
-              'self_check 记录了字标菜单入口与当前皮肤')
+        check('plugin_actions=add:plus,row:chev_r,inline_open' in text,
+              'self_check 记录了 ＋ / 行尾箭头 / 行内展开')
+        check('menu_entry=label:设置' in text and 'skin=' in text,
+              'self_check 记录了设置入口与当前皮肤')
     finally:
         app.close_plugin_settings()
-        app.close_settings()
         root.destroy()
 
     shutil.rmtree(TMP, ignore_errors=True)

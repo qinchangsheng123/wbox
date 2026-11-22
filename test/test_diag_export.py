@@ -50,13 +50,13 @@ opened = []
 _orig_startfile = os.startfile
 os.startfile = lambda p: opened.append(p)
 try:
-    print('[1] 齿轮菜单里有「导出诊断」一行')
-    app.open_settings()
+    print('[1] 设置页「关于」组里有「导出诊断」一行')
+    app.toggle_pane()
     root.update()
-    labels = [w.cget('text') for w in sg.walk(app.settings_inner)
+    labels = [w.cget('text') for w in sg.walk(app.set_inner)
               if isinstance(w, tk.Label)]
-    check('导出诊断' in labels, '菜单含「导出诊断」')
-    app.close_settings()
+    check('导出诊断' in labels, '设置页含「导出诊断」')
+    app.toggle_pane()
 
     print('[2] on_diag 在安装目录打出 zip，内容齐全，成功后打开所在文件夹')
     app.on_diag()

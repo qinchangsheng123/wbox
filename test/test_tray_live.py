@@ -72,10 +72,10 @@ def pump(cond, timeout=5.0):
 try:
     check(app.tray is not None and app.tray.active,
           '默认配置托盘图标常驻（存在性默认开，收托盘仍 opt-in）')
-    app.open_settings()
+    app.toggle_pane()
     root.update()
     check('tray' in app.switches and 'notify' in app.switches,
-          '齿轮菜单里有「启动后收进托盘 / 游戏结束提示」两个开关')
+          '设置页里有「启动后收进托盘 / 游戏结束提示」两个开关')
     sw = app.switches['tray']
     sw.set_value(True)
     app.on_tray_toggle()

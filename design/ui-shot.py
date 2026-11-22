@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """启动设置面板并截图（验收用）。
 
-用法：C:/Python38/python.exe design/ui-shot.py out.bmp [light|dark] [skin]
-不写配置文件——明暗与皮肤只在内存里改，避免污染生产 app\\config.json。
+用法：C:/Python38/python.exe design/ui-shot.py out.bmp [light|dark] [skin] [panel] [dot]
+  panel: set / inline / plugin（v2.18.0 起 menu 只是 set 的兼容别名）
+  dot:   row / badge / off（v2.15.0 插件状态点挂法，不写就用配置里的值）
+不写配置文件——明暗、皮肤与状态点挂法只在内存里改，避免污染生产 app\\config.json。
 """
 import os
 import sys
@@ -22,7 +24,7 @@ def main(argv):
     out = argv[1] if len(argv) > 1 else 'D:/06-Temp/ui.bmp'
     appearance = argv[2] if len(argv) > 2 else 'light'
     skin_id = argv[3] if len(argv) > 3 else None
-    panel = argv[4] if len(argv) > 4 else ''      # menu / plugin
+    panel = argv[4] if len(argv) > 4 else ''      # set / inline / plugin
 
     g.enable_dpi_awareness()
     root = tk.Tk()
@@ -30,6 +32,8 @@ def main(argv):
     if skin_id and skin_id != app.skin.id:
         app.skin = skins.get(skin_id, base=g.BASE) or app.skin
     app.theme = appearance
+    if len(argv) > 5 and argv[5]:
+        app.plugin_dot = argv[5]
     app.tok = app.skin.tokens(appearance)
     app.colors = g.legacy_colors(app.tok, appearance)
     app.resize_fonts()
@@ -46,17 +50,9 @@ def main(argv):
         root.update()
         root.update_idletasks()
         time.sleep(0.14)
-    if panel == 'menu':
-        app.open_settings()
-        # probe=True 时浮层默认 alpha=0（自检不该往桌面上闪窗口），截图要显形
-        try:
-            app.settings_win.attributes('-alpha', 1.0)
-        except Exception:
-            pass
-        for _ in range(4):
-            root.update()
-            time.sleep(0.12)
-    elif panel == 'set':
+    # v2.18.0：齿轮浮层菜单没了，`menu` 保留为 `set` 的兼容别名，
+    # 老截图命令不会报错（同窗换页，不建 Toplevel）。
+    if panel in ('menu', 'set'):
         app.toggle_pane()
         for _ in range(4):
             root.update()
@@ -80,10 +76,10 @@ def main(argv):
     w, h = root.winfo_width(), root.winfo_height()
     print('skin=%s appearance=%s win=%dx%d at %d,%d' % (
         app.skin.id, app.theme, w, h, x, y))
-    # 浮层可能在窗口左侧（菜单贴着字标左沿展开），所以截「窗口 ∪ 浮层」的并集
+    # 插件设置浮层可能超出窗口（贴行尾箭头展开），截「窗口 ∪ 浮层」的并集。
+    # 设置页是同窗换页，不再有第二个 Toplevel。
     box = [x, y, x + w, y + h]
-    pop = app.settings_win if panel == 'menu' else (
-        app.plugin_win if panel == 'plugin' else None)
+    pop = app.plugin_win if panel == 'plugin' else None
     if pop is not None and pop.winfo_exists():
         box[0] = min(box[0], pop.winfo_rootx())
         box[1] = min(box[1], pop.winfo_rooty())

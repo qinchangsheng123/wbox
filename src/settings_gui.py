@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
-"""WBOX 设置面板（极简内置 + 第三方皮肤，高 DPI 自适应）。
+"""WBOX 设置面板（默认骨架 + 第三方皮肤，高 DPI 自适应）。
 
-界面约定（2026-11-09 定版，2026-11-12 起改为插件驱动）：
-  1. 主页面**只**保留「名称 + 开关」的功能行，行数由插件注册表决定：
+界面约定（2026-11-09 定版，2026-11-12 起改为插件驱动，v2.18.0 收成一套骨架）：
+  1. 列表页**只**保留「名称 + 开关」的功能行，行数由插件注册表决定：
      有几个 home=true 的插件就有几行，删掉插件目录那一行就消失。
      无编号、无详情小字、无状态行。
   2. 鼠标悬停在名称上显示该功能简介（ToolTip，文案来自 manifest.tip）。
-  3. 右上角是齿轮图标，点开浏览器式弹出菜单（贴按钮展开的无标题栏浮层）：
-     每行「图标 + 文字 + 右侧提示」，分组用 1px 分隔线，悬停高亮，
-     点击外部 / Esc 收起；每个项目独占一行、纵向依次排列。
-     开机自启、守护状态、启动/停止、重扫、日志、配置、主题、保存、关闭全在这里。
+  3. 右上角「设置」二字是**唯一**的二级入口，点它同窗换页（不弹浮层）。
+     守护启停、开机自启、收托盘、游戏结束提示、重扫、日志、诊断、配置、
+     外观与皮肤全在那一页。行尾「›」箭头是第三级：行内展开该插件的设置。
+     （v2.18.0 删掉了「点字标弹浏览器式菜单」那一套，约 900 行，生产不可达。）
   4. 三个开关切换即时写回 config.json，守护 2 秒内热加载，不用点保存。
   5. 外观走皮肤层（src/skins.py）：`ui_skin` 选皮肤、`ui_appearance` 选明暗；
      老配置的 `ui_theme` 仍能读，按它推默认皮肤与明暗，升级不变脸。
+     皮肤只能换颜色与尺寸，骨架只有这一套。
 
 关键：
   - 创建任何 Tk 窗口前启用 Per-Monitor DPI Awareness V2，否则 Windows 会把
@@ -55,25 +56,30 @@ from tkinter import messagebox
 #   ui_gfx       配色映射 + Canvas 绘图原语（圆角、混色、缓动）
 #   ui_widgets   Switch / Glyph / ToolTip 三个自绘控件
 # 名字在这里原样再导一遍：App 的调用点一个不改，测试里的 settings_gui.xxx 照旧。
-from panel_env import (BASE, BASE_W, CFG, DEFAULT_UI_SIZE, ICON_DARK, ICON_LIGHT,
+from panel_env import (BASE, CFG, DEFAULT_UI_SIZE, ICON_DARK, ICON_LIGHT,
                        LAYOUTCHECK, LOG, PLAIN_W, PLUGINS_DIR, SELFCHECK,
                        STATE_FILE, STOP_FILE, SYS32, TASK, TASKLIST, UI_SIZES,
                        UI_SIZE_ZOOM, VERSION)
 from ui_gfx import (LEGACY_KEYS, THEMES, _cb, _compat_themes,
-                    client_area_animation, ease, legacy_colors, mix_hex,
-                    round_rect)
-from ui_widgets import Glyph, Switch, ToolTip
+                    ease, legacy_colors, mix_hex, round_rect)
+from ui_widgets import Dot, Glyph, Switch, ToolTip
 from win_env import (POINT, RECT, can_write_config, dir_writable,
                      elevate_settings, enable_dpi_awareness as _dpi_awareness,
                      file_writable, get_window_icons, is_admin,
                      panel_single_instance, ps_run,
                      set_window_icons, system_dpi, window_dpi, work_area,
                      win_hwnd)
-from panel_state import (SESSION_TEXT, autostart_state, cfg_get_path,
-                         cfg_set_path, effective_cfg, guard_diagnostics,
+from panel_state import (SESSION_TEXT, PLUGIN_DOT_MODES, autostart_state,
+                         cfg_get_path,
+                         cfg_set_path, effective_cfg,
+                         guard_diagnostics,  # noqa: F401  测试按老名字取用
+                         guard_running, guard_snapshot,
                          guard_state, load_cfg, load_config_raw, pick_family,
-                         plugin_entries, plugin_switch_state,
+                         plugin_dot_from_cfg, plugin_entries,
+                         plugin_switch_state,
                          plugin_switch_write, save_cfg, set_autostart,
+                         # v2.18.0：面板不再自己显示这行状态文字（齿轮菜单退役），
+                         # 保留导入是因为 test_guard_beat 按 settings_gui 的老名字取用。
                          short_guard_state, start_guard, ui_size_from_cfg,
                          walk, with_defaults)
 
@@ -90,83 +96,45 @@ def enable_dpi_awareness():
     return DPI_MODE
 
 
-# 主页面与齿轮菜单的**唯一**数据来源是插件注册表（plugins\*\plugin.json）。
+# 主页面与设置页的**唯一**数据来源是插件注册表（plugins\*\plugin.json）。
 # v1 的 FEATURES 常量（写死三个功能的名字/图标/简介）已删除：删掉一个插件目录，
 # 面板就该少一行、不报错、不留空行，而不是继续显示一个点不动的幽灵功能。
-#
-# 插件加载期状态 -> 菜单右侧提示。degraded 不走这张表：它带异常次数，另算。
-PLUGIN_STATUS_HINT = {
-    plugin_host.STATUS_OK: '正常',
-    plugin_host.STATUS_DEGRADED: '运行异常',
-    plugin_host.STATUS_BAD_MANIFEST: '未能加载',
-    plugin_host.STATUS_LOAD_FAILED: '未能加载',
-    plugin_host.STATUS_TOO_NEW: '需要更新',
-    plugin_host.STATUS_CONFLICT: '名称重复',
-    'disabled': '已关闭',
-}
+def plugin_dot_state(entry, state=None, switch=None):
+    """插件行状态点（v2.15.0）：返回 'ok' / 'off' / 'bad'，None = 不画。
 
-
-# 菜单里"内核自带"的行数（不含「已安装插件」标题、每个插件一行、以及
-# 「打开插件目录」/「浏览插件库」那两行）。v2.3.0 比 v2.2.0 多一行「插件开发指南」，11 -> 12：
-#   守护状态 / 启动守护 / 停止守护 / 开机自启 / 重新扫描游戏 / 查看日志 /
-#   编辑配置文件 / 插件开发指南 / 外观与皮肤 / 保存设置 / 关闭菜单
-# v2.7.0：原「浅色主题 / 深色主题」两行合成「外观与皮肤…」一行，12 -> 11。
-# v2.9.0：「启动与守护」补设计稿两行「启动后收进托盘 / 游戏结束提示」，11 -> 13。
-# v2.13.0：维护区补「导出诊断」一行，13 -> 14。
-# 测试与滚动区高度都从这里取，别再各写一份数字。
-CORE_MENU_ROWS = 14
-
-
-def menu_row_count(entries):
-    """弹出菜单的行数（不含分隔线与版本小字）。
-
-    必须由注册表算出来，不能写死：删一个插件目录菜单就矮一行，写死会让滚动区
-    多出一段空白。式子里的固定行是：
-
-      CORE_MENU_ROWS  —— 内核自带的行，含「插件开发指南」（口径见该常量注释）
-      1               —— 「已安装插件」分组标题
-      len(entries)    —— 每个插件一行
-      2               —— 「打开插件目录」+ v2.11.3 新增的「浏览插件库」
-
-    注意「插件开发指南」属于 CORE_MENU_ROWS，不在插件分组里（v2.3.0 定稿时的
-    取舍：指南讲的是"怎么写插件"，但对着的是所有用户，放在内核区更靠前）。
-    """
-    return CORE_MENU_ROWS + 1 + len(entries or ()) + 2
-
-
-def plugin_hint(entry, state=None, switch=None):
-    """菜单里某一行插件右侧的提示文本：「状态 · 已启用 / 已关闭」。
-
-    state 是守护写进 plugins_state.json 的那条记录（运行期状态），可为 None：
-      - 加载期就不是 ok 的插件（manifest 坏 / 导入失败 / api 太新…）以加载期为准，
-        因为它的代码根本没跑起来，运行期记录没有意义（也可能是上一版的残留）。
-      - 加载期 ok 但守护报过 degraded / error_count>0，运行期状态优先于「正常」。
-
-    switch 是这个插件开关的当前值（True/False），None = 调用方不要求显示：
-      - 只有真加载起来的插件才追加启用态。manifest 坏 / 导入失败 / api 太新的插件
-        开关毫无意义（主页面也没有它的开关行），写成「已禁用」会让人以为"拨一下就好"。
-      - 未提权且 manifest.requires_admin 为真时，在启用态后再追加「需要管理员」：这类插件
-        不是坏了，是权限不够，两件事得在同一行里同时看见（否则用户只会看到一个「正常」+ 不工作）。
-        switch=None 时启用态和「需管理员」都不追加——调用方没要求显示就不猜。
+    这是面板上唯一表达「这个插件能不能用」的地方（v2.18.0 删掉齿轮菜单后，
+    原来那行「正常 · 已启用」的文字提示随之退役）。
+    点的意义不是把开关再画一遍——开关是意愿，点是事实：
+      - 加载期不是 ok：None。这类插件根本不进主页面（entries 只收 STATUS_OK），
+        真被别的入口叫到也不该冒一个它自己都代表不了的色。
+      - 运行期 degraded / error_count>0：'bad'。开关明明开着但守护在报错，
+        这是两处唯一会不一致的时刻，也是这枚点真正值钱的地方。
+      - 开关闭：'off'。放在 bad 之后判——一个关着但上次跑崩过的插件，
+        打开后大概率还崩，用户先要知道这件事。
     """
     if entry.status != plugin_host.STATUS_OK:
-        text = PLUGIN_STATUS_HINT.get(entry.status, entry.status or '未知')
-    else:
-        text = '正常'
-        if isinstance(state, dict):
-            errs = state.get('error_count')
-            if isinstance(errs, bool) or not isinstance(errs, int):
-                errs = 0
-            if state.get('status') == plugin_host.STATUS_DEGRADED or errs > 0:
-                text = ('运行异常 %d 次' % errs) if errs else '运行异常'
-    # 插件版本号不进**齿轮菜单**（文案规范 §1）：那里只回答"能不能用"。
-    # 要核对装的是哪一版，点开该插件的设置浮层——头部有版本胶囊（v2.12.0）。
-    parts = [text]
-    if isinstance(switch, bool) and entry.status in plugin_host.USABLE_STATUS:
-        parts.append('已启用' if switch else '已关闭')
-        if getattr(entry, 'requires_admin', False) and not is_admin():
-            parts.append('需管理员')
-    return ' · '.join(parts)
+        return None
+    if isinstance(state, dict):
+        errs = state.get('error_count')
+        if isinstance(errs, bool) or not isinstance(errs, int):
+            errs = 0
+        if state.get('status') == plugin_host.STATUS_DEGRADED or errs > 0:
+            return 'bad'
+    if switch is False:
+        return 'off'
+    return 'ok'
+
+
+def plugin_dot_color(colors, state):
+    """状态点取色：只用已有色，不新增强调色。
+
+    ok 用 inv（legacy 键名，对应皮肤 token `on`，和开关开态同色，说的是同一
+    件事：在跑）；off 用 t4（够看见但不抢）；bad 用 danger——极简的铁律是
+    danger 只给破坏性操作，这里破例给「运行异常」，因为它是数据状态而不是
+    装饰，且版本号会同时提到 fg，不只靠颜色传达。
+    """
+    return {'ok': colors['inv'], 'off': colors['t4'],
+            'bad': colors['danger']}.get(state)
 
 
 def read_plugin_states():
@@ -206,15 +174,8 @@ class App(object):
         self.dpi = int(dpi_override) if dpi_override else window_dpi(root.winfo_id())
         self._job = None
         self._dpi_lock = False
-        self.settings_win = None          # 浏览器式弹出菜单（overrideredirect）
-        self.settings_outer = None
-        self.settings_canvas = None
-        self.settings_inner = None
-        self._menu_window_id = None
-        self.gear_wrap = None
-        self.gear_btn = None
-        self._menu_was_pressed = False
-        # 每插件设置弹框（与上面的齿轮菜单是两套浮层，互斥打开）
+        # 浮层只剩两类：皮肤面板、每插件设置弹框。v2.18.0 起没有「点字标弹菜单」
+        # 那一套（浏览器式气泡菜单整块删除），设置改由右上角「设置」同窗换页。
         self.plugin_win = None
         self.plugin_body = None
         self.plugin_canvas = None
@@ -225,10 +186,8 @@ class App(object):
         self.plugin_gears = {}
         self._plugin_was_pressed = False
         self._setting_switches = {}
-        self.status_label = None
         self.tooltips = []
         self.switches = {}
-        self.theme_buttons = {}
 
         # 显示名与系统标识统一 WBOX（v2.11.0 全量改名：exe / 安装目录 /
         # 计划任务 / 注册表键 / 管道 / mutex / 备份目录）；旧 Wingman 安装
@@ -238,6 +197,9 @@ class App(object):
         # 晚一步，第一版控件就按旧尺寸画出来，要等下一次 rebuild 才对齐。
         self.ui_size = ui_size_from_cfg()
         self.ui_zoom = UI_SIZE_ZOOM[self.ui_size]
+        # v2.15.0 插件状态点的挂法（row / badge / off），与窗口大小同一层：
+        # 都属于「纯展示偏好」，读不到就按默认「行内」画。
+        self.plugin_dot = plugin_dot_from_cfg()
         self.apply_scaling()
 
         self.family = pick_family(root)
@@ -252,11 +214,12 @@ class App(object):
         self.f_small = tkfont.Font(root, family=self.family)
         self.f_wordmark = tkfont.Font(root, family=self.family, weight='bold')
         # 注册表必须在读配置之前建好：三段合并要用各插件的 DEFAULT_CONFIG，
-        # 主页面行数与菜单分组也全靠它（顺序反了就会拿不到插件默认值）。
+        # 主页面行数也全靠它（顺序反了就会拿不到插件默认值）。
         self.entries_all = plugin_entries()
         self.runtime_state = read_plugin_states()
-        # 主页面只显示「加载成功 + 作者声明 home」的插件；失败的插件只在齿轮菜单
-        # 里露一行状态，不占主页面（半成品功能开关比没有更糟）。
+        # 主页面只显示「加载成功 + 作者声明 home」的插件；失败的插件不占主页面
+        #（半成品功能开关比没有更糟）。它们仍然留在 entries_all 里，自检和
+        # --self-check 能列出「加载失败」，只是界面上没有位置了。
         self.entries = [e for e in self.entries_all
                         if e.status == plugin_host.STATUS_OK and e.home]
         self.entries.sort(key=lambda e: (e.order, e.id))
@@ -272,23 +235,29 @@ class App(object):
             else self.theme
         # v2.10.0 迁移：老配置显式写过 liquid-glass 的，内置已移除会回退
         # plain；把解析结果写回一次，免得每次启动都走「不存在→回退」日志。
+        # v2.17.0 起这条也顺手把「声明 standard 的第三方包」落到实际 id 上。
         if not self.readonly and not probe \
                 and cfg.get('ui_skin') not in (None, self.skin.id):
             self.save_appearance()
         self.tok = self.skin.tokens(self.theme)
         self.colors = legacy_colors(self.tok, self.theme)
-        # 两档皮肤走同一套骨架，差异只在材质与交互密度：
-        # glass=True 圆角卡片 + 浮层设置；False 方角直排 + 行内展开 + 同窗换页。
-        self.glass = self.skin.performance == 'standard'
-        self.pane = 'list'                # 极简档：list / set 同窗两页
-        self.inline_open = None           # 极简档：哪一行展开了内联设置
-        self.inline_full = None           # 极简档：哪一行摊开了全部设置项
+        # v2.17.0：只剩一套骨架——方角直排 + 行内展开 + 同窗换页。
+        # performance / engine 不再参与渲染，皮肤只能改颜色与尺寸（26 token
+        # + metrics），这正是「以后做皮肤都以默认为底」的落地约束。
+        self.pane = 'list'                # list / set 同窗两页
+        self.inline_open = None           # 哪一行展开了内联设置
+        self.inline_full = None           # 哪一行摊开了全部设置项
         self.board_full_h = 0             # 列表内容全高，溢出滚动的基准
-        self.set_canvas = None            # 极简设置页的滚动容器（仅溢出时滚）
+        self.set_canvas = None            # 设置页的滚动容器（仅溢出时滚）
         self.set_inner = None
+        # 设置页的守护状态行（状态值 / 进程事件 / 插件健康 + 启停按钮）。
+        # 三个值每 2 秒刷新一次，所以控件引用要留住；None = 当前不在设置页。
+        self.set_guard = None
+        self._guard_want = None           # 'up' / 'down'：刚点完启停，等它生效
+        self._guard_since = 0.0
         self.skin_canvas = None           # 皮肤面板的滚动容器（仅溢出时滚）
         self.skin_window_id = None
-        self.win_w_pref = BASE_W if self.glass else PLAIN_W  # 最大化按钮会改它
+        self.win_w_pref = PLAIN_W         # 最大化按钮会改它
         self.custom_chrome = False
         self._drag = None
         self._maximized = False
@@ -298,11 +267,8 @@ class App(object):
         # 点中的那一行跟着跑掉，看起来就像"点了没反应"。
         self._win_top = None
         self._tweens = {}
-        self._motion_on = client_area_animation()
-        self._menu_fade = None
         self._dialog_win = None
         self._dialog_picks = []
-        self._menu_rows = []
         self.resize_fonts()
 
         # 开关状态一个插件一个：键就是插件 id，值是插件自己算出来的初始状态。
@@ -332,8 +298,6 @@ class App(object):
         root.minsize(self.px(430), self.px(200))
         root.resizable(False, False)
         root.bind('<Configure>', self.on_configure)
-        # 点击主窗口任意空白处 / Esc 收起弹出菜单（齿轮自身在 ButtonRelease 处理）
-        root.bind('<Button-1>', self._menu_outside, add='+')
 
         def _esc(e):
             # 收最上面那层浮层；都收起后焦点回字标（close_* 里做）
@@ -341,8 +305,6 @@ class App(object):
                 self.close_skin_settings()
             elif getattr(self, 'plugin_win', None) and self.plugin_win.winfo_exists():
                 self.close_plugin_settings()
-            else:
-                self.close_settings()
         root.bind('<Escape>', _esc, add='+')
         self.place()
 
@@ -377,21 +339,19 @@ class App(object):
         self.root.tk.call('tk', 'scaling', self.dpi / 72.0)
 
     def resize_fonts(self):
-        # 字号基准来自皮肤 metrics.font（玻璃 15 / 极简 13），
-        # 标题与辅助字按它派生，避免每档皮肤各写一套固定像素。
+        # 字号基准来自皮肤 metrics.font（默认 13），标题与辅助字按它派生，
+        # 不让每套皮肤各写一套固定像素。
         skin = getattr(self, 'skin', None)
-        base = skin.metrics.get('font', 15) if skin is not None else 15
-        # 字标单独一档：玻璃 22 / 极简 15。它要压得住整屏，跟着正文字号
-        # 等比放大会在极简皮肤里显得头重脚轻。
-        word = 22 if (skin is not None and skin.performance == 'standard') else 15
-        # 极简档辅助字只比正文小 1/2 px：v2.9.0 的 -2/-3 派生把「设置」等
-        # 入口压到 10px，用户实测偏小；standard 档保持设计稿派生。
-        minimal = skin is not None and skin.performance == 'minimal'
+        base = skin.metrics.get('font', 13) if skin is not None else 13
+        # 字标单独一档 15：它要压得住整屏，跟着正文字号等比放大会头重脚轻。
+        word = 15
+        # 辅助字只比正文小 1/2 px：v2.9.0 的 -2/-3 派生把「设置」等入口
+        # 压到 10px，用户实测偏小。
         for f, size_px in ((self.f_title, int(round(base * 1.5))),
                            (self.f_head, base),
                            (self.f_row, base),
-                           (self.f_body, max(10, base - (1 if minimal else 2))),
-                           (self.f_small, max(9, base - (2 if minimal else 3))),
+                           (self.f_body, max(10, base - 1)),
+                           (self.f_small, max(9, base - 2)),
                            (self.f_wordmark, word)):
             try:
                 f.configure(size=-self.px(size_px))     # 负数 = 像素
@@ -403,10 +363,14 @@ class App(object):
         return
 
     def popup_colors(self, key='pop_base'):
-        """浮层用的配色：底色换成 menu_base / pop_base。
+        """浮层用的配色：底色换成 `pop_base`。
 
-        主窗口底（glass）与浮层底必须分开：两者同色时浮层像"窗口的一部分"，
-        用户分不清哪块是可以点掉的浮层。设计稿里就是 .72 / .97 两档。
+        窗口底（token `glass`）与浮层底必须分开：两者同色时浮层像"窗口的
+        一部分"，用户分不清哪块是可以点掉的浮层。
+
+        `menu_base` 从 v2.18.0 起是**历史占位名**：它是齿轮气泡菜单的底，
+        那套菜单整块删了，面板不再读它。token 名不改——26 个 token 是所有已分发
+        皮肤包的一部分，删名或改名会让别人的包直接失效。
         """
         c = dict(self.colors)
         c['bg'] = self.tok.get(key, c['bg'])
@@ -588,6 +552,7 @@ class App(object):
             cfg['ui_skin'] = self.skin.id
             cfg['ui_appearance'] = self.appearance_pref
             cfg['ui_size'] = self.ui_size    # v2.12.0：小 / 中 / 大
+            cfg['ui_plugin_dot'] = self.plugin_dot   # v2.15.0：row / badge / off
             cfg['ui_theme'] = self.theme      # 老字段留一份快照，降级不突变
             save_cfg(cfg)
         except Exception:
@@ -608,15 +573,11 @@ class App(object):
                 else appearance
         self.tok = skin.tokens(self.theme)
         self.colors = legacy_colors(self.tok, self.theme)
-        # 换皮肤会换整套交互骨架（圆角卡片 / 行内展开 / 同窗换页），
-        # 这三样必须在重建前跟着皮肤走，否则极简档会画成玻璃的样子。
-        self.glass = skin.performance == 'standard'
-        self.win_w_pref = BASE_W if self.glass else PLAIN_W
-        # 极简档换明暗/换皮肤时留在原页：用户在「设置」里点「深色」，
-        # 结果被弹回列表页，等于这一下白点了。玻璃档没有同窗换页，才归位。
-        if self.glass:
-            self.pane = 'list'
-            self.inline_open = None
+        # 换皮肤只换颜色与尺寸，不换骨架：v2.17.0 起只有默认一套。
+        # 留一条不变式——窗口宽度基准始终是 PLAIN_W，皮肤改不了。
+        self.win_w_pref = PLAIN_W
+        # 换明暗/换皮肤时留在原页：用户在「设置」里点「深色」，
+        # 结果被弹回列表页，等于这一下白点了。
         self.resize_fonts()
         # 只读模式下外观只在本进程内生效，不弹"需要管理员权限"打断切换
         if persist:
@@ -662,11 +623,22 @@ class App(object):
             self.save_appearance()
         self.rebuild()
 
+    def set_plugin_dot(self, key, persist=True):
+        """插件状态点三档：行内 / 角标 / 不显示。
+
+        只换绘制位置、不动布局骨架，但控件是整块重建出来的（和换皮肤同一条
+        路径），所以仍走 rebuild()。persist=False 只给自检用：自检要量三档，
+        不能顺手改掉用户的选择。
+        """
+        if key not in PLUGIN_DOT_MODES or key == self.plugin_dot:
+            return
+        self.plugin_dot = key
+        if persist:
+            self.save_appearance()
+        self.rebuild()
+
     def rebuild(self):
         """切主题 / 改 DPI 时按新令牌重建所有控件，避免残留旧配色的方块。"""
-        # 皮肤可能被外部直接换掉（截图脚本、测试替身），骨架标志在这里重新取一次，
-        # 不然极简档会套着玻璃的圆角卡片重绘。
-        self.glass = self.skin.performance == 'standard'
         self.close_plugin_settings()
         self.hide_tips()
         try:
@@ -681,16 +653,6 @@ class App(object):
         self.tooltips = []
         self.switches = {}
         self.build_main()
-        if self.settings_win and self.settings_win.winfo_exists():
-            for w in list(self.settings_inner.winfo_children()):
-                w.destroy()
-            c = self.colors
-            self.settings_win.configure(bg=c['line'])
-            self.settings_outer.configure(bg=c['line'])
-            self.settings_canvas.configure(bg=c['bg'])
-            self.settings_inner.configure(bg=c['bg'])
-            self.build_settings(self.settings_inner)
-            self.place_menu()
         if getattr(self, 'skin_win', None) and self.skin_win.winfo_exists():
             self.refresh_skin_list()
         self.place()
@@ -703,10 +665,13 @@ class App(object):
 
     # ---- 动效：单 after 链插值（设计稿时长 + 唯一曲线） ----
     def anim_ms(self, ms):
-        """玻璃档才动；系统关动画 / probe 自检一律 0ms（直接跳终态）。"""
-        if self.probe or not self.glass or not self._motion_on:
-            return 0
-        return ms
+        """过渡时长。默认骨架零动画：一律返回 0，所有 tween 同步跳终态。
+
+        v2.17.0 之前这里还有一道 `glass` 闸（只有玻璃档才动），骨架合并后
+        没有"哪档该动"的区分了；默认就是最省的零动画。调用点全部保留
+        （tween / _pop_in / 开关），将来要加回动效只改这一处返回值。
+        """
+        return 0
 
     def cancel_tween(self, key):
         job = self._tweens.pop(key, None)
@@ -740,7 +705,7 @@ class App(object):
         tick()
 
     def _pop_in(self, win, slide=0):
-        """浮层入场 200ms 淡入；菜单另加 translateY(-6px) 落位。
+        """浮层入场 200ms 淡入；按 slide 再叠一个 translateY 落位。
 
         只做入场：退场立即 destroy——淡出链会让 Toplevel 残骸多活一百多毫秒，
         撞重建的「无残留浮层」断言，也撞点外部收起的全局判定。
@@ -772,8 +737,8 @@ class App(object):
         self.tween(('pop', id(win)), ms, step, done)
 
     # ---- 通用控件 ----
-    # v1.2.0 起界面只剩「齿轮图标按钮 + 自绘菜单行」，旧版 tk.Button 工厂已删除：
-    # 三类交互全部由 Glyph / Switch / menu_row 承接，避免两套控件风格并存。
+    # v1.2.0 起界面只剩「自绘按钮 + 行内控件」，旧版 tk.Button 工厂已删除：
+    # 三类交互全部由 Glyph / Switch / 行控件承接，避免两套控件风格并存。
     def sep(self, master, pady=0):
         tk.Frame(master, height=1, bg=self.colors['line']).pack(
             fill='x', pady=pady)
@@ -871,8 +836,8 @@ class App(object):
         TOOLWINDOW 缓存了排除决定，Map 里改位 + FRAMECHANGED 不够，必须
         hide/show 刷新一次才出按钮；alpha=0 探针路径改位即够（hook_bits 截图），
         两条路径都覆盖才稳。withdraw/deiconify 会清键盘焦点（焦点 None 时 Tk
-        丢弃键事件、菜单 Esc 全链路失效），刷新前记住焦点、刷新后 focus_force
-        回填——focus_set 在非前景进程不生效，force 才落得住（bisect 实测）。
+        丢弃键事件），刷新前记住焦点、刷新后 focus_force 回填——focus_set 在
+        非前景进程不生效，force 才落得住（bisect 实测）。
         iconic 时不刷新，等下次 show 自然重判，避免把最小化按钮刷没。"""
         try:
             u = ctypes.windll.user32
@@ -928,10 +893,6 @@ class App(object):
         self.root.geometry('+%d+%d' % (ev.x_root - d[0], ev.y_root - d[1]))
 
     def on_close(self):
-        try:
-            self.close_settings()
-        except Exception:
-            pass
         if bool(self.tray_var.get()):
             if self.tray is None or not self.tray.active:
                 # 勾了「收进托盘」但图标不在：先补一次。补不上就不隐藏——
@@ -1004,13 +965,12 @@ class App(object):
 
     # ---- 标题栏控件 ----
     def chrome_button(self, master, kind, command, tip):
-        """窗口控制：34×26 命中区，悬停一层圆角底（极简档方角）。"""
+        """窗口控制：34×26 命中区，悬停铺一层方角底。"""
         c = self.colors
-        glass = self.skin.performance == 'standard'
         w, h = self.px(34), self.px(26)
         cv = tk.Canvas(master, width=w, height=h, bg=c['bg'],
                        highlightthickness=0, bd=0, cursor='hand2')
-        g = Glyph(cv, self, kind, size=self.px(12 if not glass else 11), ink='t3')
+        g = Glyph(cv, self, kind, size=self.px(12), ink='t3')
         g.set_bg(c['bg'])
         cv.create_window(w // 2, h // 2, window=g)
         base = c['bg']
@@ -1022,13 +982,8 @@ class App(object):
                 cv.delete('hl')
                 g.set_bg(col)
                 if col != base:
-                    r = self.px(8) if glass else 0
-                    if r:
-                        round_rect(cv, 1, 1, w - 1, h - 1, r, fill=col,
-                                   outline='', tags='hl')
-                    else:
-                        cv.create_rectangle(1, 1, w - 1, h - 1, fill=col,
-                                            outline='', tags='hl')
+                    cv.create_rectangle(1, 1, w - 1, h - 1, fill=col,
+                                        outline='', tags='hl')
                     cv.tag_lower('hl')
             except Exception:
                 pass
@@ -1053,16 +1008,15 @@ class App(object):
         return cv
 
     def round_button(self, master, size, glyph_kind, glyph_size, command, tip):
-        """圆形按钮（加号）：fill 底 + 字形，悬停换 fill_2。极简档只留字形与方底。"""
+        """圆形按钮（加号）：浅灰圆角方底 + 字形，悬停加深。"""
         c = self.colors
-        glass = self.skin.performance == 'standard'
         cv = tk.Canvas(master, width=size, height=size, bg=c['bg'],
                        highlightthickness=0, bd=0)
         g = Glyph(cv, self, glyph_kind, size=glyph_size, ink='fg')
-        # 极简档也要读得出「这是个按钮」：浅灰圆角方底 + 悬停加深，
-        # 不再是一枚裸字形漂在标题栏上（v2.10.0 打磨）。
-        base = self.tok['fill'] if glass else self.tok['fill_2']
-        hot = self.tok['fill_2'] if glass else self.tok['fill']
+        # 也要读得出「这是个按钮」：浅灰圆角方底 + 悬停加深，
+        # 不是一枚裸字形漂在标题栏上（v2.10.0 打磨）。
+        base = self.tok['fill_2']
+        hot = self.tok['fill']
         g.set_bg(base)
         cv.create_window(size // 2, size // 2, window=g)
 
@@ -1070,12 +1024,8 @@ class App(object):
             col = col or (hot if on else base)
             try:
                 cv.delete('bg')
-                if glass:
-                    cv.create_oval(0, 0, size, size, fill=col, outline='',
-                                   tags='bg')
-                else:
-                    round_rect(cv, 0, 0, size, size, self.px(6), fill=col,
-                               outline='', tags='bg')
+                round_rect(cv, 0, 0, size, size, self.px(6), fill=col,
+                           outline='', tags='bg')
                 cv.tag_lower('bg')
                 g.set_bg(col)
             except Exception:
@@ -1104,29 +1054,26 @@ class App(object):
 
     # ---- 主页面 ----
     def build_main(self):
-        """标题栏 + 内容区。内容区按皮肤分两套：
+        """标题栏 + 内容区（只有一套骨架）。
 
-        * 玻璃档：圆角卡片 + 每行行尾一枚滑块，点开 Toplevel 设置浮层；
-        * 极简档：方角列表 + 行内展开（不新建窗口），「设置」在同窗换页。
+        * 列表页：方角直排，每行行内展开设置（不新建窗口）；
+        * 设置页：同窗换页，标题栏左上角变成「←」面包屑。
 
-        两套都从插件注册表生成，行数据来源只有一个。
+        行数据来源只有一个——插件注册表。
         """
         self.plugin_gears = {}
         self.build_titlebar(self.main)
-        if self.pane == 'set' and not self.glass:
+        if self.pane == 'set':
             self.build_set_view(self.main)
         else:
             self.build_list_view(self.main)
-        # Tab 顺序照文案规范 §4：＋ → 字标（菜单入口，仅玻璃档）→ 各行开关
-        # → 各行行尾。极简档没有字标入口，链首是「设置」按钮。
+        # Tab 顺序照文案规范 §4：＋ → 「设置」/「←」→ 各行开关 → 各行行尾。
         chain = []
         if self.pane != 'set' and getattr(self, 'add_wrap', None) is not None:
             chain.append(self.add_wrap)
-        if not self.glass and getattr(self, 'pane_btn', None) is not None:
+        if getattr(self, 'pane_btn', None) is not None:
             chain.append(self.pane_btn)
-        if self.glass:
-            chain.append(self.brand_wrap)
-        if self.pane == 'set' and not self.glass:
+        if self.pane == 'set':
             chain.extend(getattr(self, '_set_focusables', []))
         else:
             chain.extend(self.switches.values())
@@ -1134,14 +1081,13 @@ class App(object):
         self._set_chain(self.root, chain)
 
     def build_titlebar(self, master):
-        """一行装下字标（=菜单入口）、加号、窗口控制。
+        """一行装下字标、加号、窗口控制、设置入口。
 
-        间距照 design/wbox-preview.html：玻璃档左右 28/8、字标热区 34 高、
-        加号 32 圆、窗口控制 34×26 且用发丝线隔开；极简档 16/6、字标 15。
+        间距照 design/wbox-preview.html 的极简档：左右 16/6、字标 15、
+        加号 26 圆角方底、窗口控制 34×26 且用发丝线隔开。
         """
         c = self.colors
-        glass = self.glass
-        tb_h = self.px(self.skin.metrics.get('titlebar', 48))
+        tb_h = self.px(self.skin.metrics.get('titlebar', 36))
         bar = tk.Frame(master, bg=c['bg'], height=tb_h)
         bar.pack(fill='x')
         bar.pack_propagate(False)
@@ -1149,7 +1095,7 @@ class App(object):
 
         # 右起：关闭、发丝线、最大化、最小化（设计稿 34×26 三枚）
         ctrls = tk.Frame(bar, bg=c['bg'])
-        ctrls.pack(side='right', padx=(0, self.px(6 if glass else 4)))
+        ctrls.pack(side='right', padx=(0, self.px(4)))
         self.chrome_button(ctrls, 'close', self.on_close,
                            '关闭面板（守护在后台继续运行）').pack(side='right')
         tk.Frame(ctrls, bg=c['line'], width=self.px(1)).pack(
@@ -1162,123 +1108,88 @@ class App(object):
 
         # 加号：唯一动作按钮（装插件）。设置页里不出现——设计稿在 set 页把
         # .p-add 一起 display:none，装插件跟"改设置"不是一件事。
-        size = self.px(32 if glass else 26)
+        size = self.px(26)
         self.add_wrap = self.round_button(
-            bar, size, 'plus', self.px(17 if glass else 15),
+            bar, size, 'plus', self.px(15),
             self.on_add_plugin,
             '安装插件：选一个插件文件，装好后立即生效。')
         if self.pane != 'set':
-            self.add_wrap.pack(side='right',
-                               padx=(0, self.px(9 if glass else 6)))
+            self.add_wrap.pack(side='right', padx=(0, self.px(6)))
         self.add_btn = getattr(self.add_wrap, 'glyph', self.add_wrap)
         self.add_wrap.configure(
             cursor='hand2' if not self.plugins_ro else 'arrow')
 
-        if not glass:
-            # 极简档没有菜单浮层：标题栏一枚纯文字「设置」，点它同窗换页；
-            # 进设置页后换成「← 设置」面包屑（设计稿 p-back / p-crumb）。
-            if self.pane == 'set':
-                back = tk.Label(bar, text='←', bg=c['bg'], fg=c['t2'],
-                                font=self.f_body, padx=self.px(8),
-                                cursor='hand2')
-                back.pack(side='left', padx=(self.px(6), 0))
-                back.bind('<ButtonRelease-1>', lambda e: self.toggle_pane())
-                back.bind('<Enter>', lambda e: back.configure(bg=c['hover']),
-                          add='+')
-                back.bind('<Leave>', lambda e: back.configure(bg=c['bg']),
-                          add='+')
-                self._keyboard(back, self.toggle_pane)
-                self.pane_btn = back
-            else:
-                txt = tk.Label(bar, text='设置', bg=c['bg'], fg=c['t2'],
-                               font=self.f_body, padx=self.px(9), cursor='hand2')
-                txt.pack(side='right', padx=(0, self.px(4)))
-                txt.bind('<ButtonRelease-1>', lambda e: self.toggle_pane())
-                txt.bind('<Enter>', lambda e: txt.configure(bg=c['hover']),
-                         add='+')
-                txt.bind('<Leave>', lambda e: txt.configure(bg=c['bg']), add='+')
-                self._keyboard(txt, self.toggle_pane)
-                self.pane_btn = txt
+        # 设置入口：标题栏一枚纯文字「设置」，点它同窗换页；
+        # 进设置页后换成「← 设置」面包屑（设计稿 p-back / p-crumb）。
+        if self.pane == 'set':
+            back = tk.Label(bar, text='←', bg=c['bg'], fg=c['t2'],
+                            font=self.f_body, padx=self.px(8),
+                            cursor='hand2')
+            back.pack(side='left', padx=(self.px(6), 0))
+            back.bind('<ButtonRelease-1>', lambda e: self.toggle_pane())
+            back.bind('<Enter>', lambda e: back.configure(bg=c['hover']),
+                      add='+')
+            back.bind('<Leave>', lambda e: back.configure(bg=c['bg']),
+                      add='+')
+            self._keyboard(back, self.toggle_pane)
+            self.pane_btn = back
+        else:
+            txt = tk.Label(bar, text='设置', bg=c['bg'], fg=c['t2'],
+                           font=self.f_body, padx=self.px(9), cursor='hand2')
+            txt.pack(side='right', padx=(0, self.px(4)))
+            txt.bind('<ButtonRelease-1>', lambda e: self.toggle_pane())
+            txt.bind('<Enter>', lambda e: txt.configure(bg=c['hover']),
+                     add='+')
+            txt.bind('<Leave>', lambda e: txt.configure(bg=c['bg']), add='+')
+            self._keyboard(txt, self.toggle_pane)
+            self.pane_btn = txt
 
-        # 左：字标。玻璃档没有「设置」按钮，整块热区就是菜单入口；
-        # 极简档右上角已经有「设置」，字标只是身份标识——同一件事挂两个入口
-        # 既重复又容易误触，所以极简档不绑点击（v2.12.2）。
+        # 左：字标。右上角已经有「设置」，字标只是身份标识——同一件事挂两个
+        # 入口既重复又容易误触，所以字标不绑点击（v2.12.2），只留拖动。
         self.brand_wrap = tk.Frame(bar, bg=c['bg'], padx=self.px(8),
-                                   pady=self.px(4),
-                                   cursor=('hand2' if glass else 'arrow'))
-        self.brand_wrap.pack(side='left', padx=(self.px(20 if glass else 8), 0))
-        brand = tk.Label(self.brand_wrap, text='WBOX', bg=c['bg'], fg=c['fg'],
-                         font=self.f_wordmark,
-                         cursor=('hand2' if glass else 'arrow'))
+                                   pady=self.px(4), cursor='arrow')
+        self.brand_wrap.pack(side='left', padx=(self.px(8), 0))
+        # v2.15.0 B 案：字标吃强调色（inv = token on）。默认皮肤里 on 是近黑，
+        # 与原来的 fg 几乎同色，等于零视觉回归；第三方配色主题才会显出颜色。
+        brand = tk.Label(self.brand_wrap, text='WBOX', bg=c['bg'], fg=c['inv'],
+                         font=self.f_wordmark, cursor='arrow')
         brand.pack(side='left')
-        self.gear_wrap, self.gear_btn = self.brand_wrap, brand
-        branders = [self.brand_wrap, brand]
-        if glass:
-            self.chev = Glyph(self.brand_wrap, self, 'chev', size=self.px(12),
-                              ink='t3')
-            self.chev.set_bg(c['bg'])
-            self.chev.flip = bool(self.settings_win and
-                                  self.settings_win.winfo_exists())
-            self.chev.pack(side='left', padx=(self.px(5), 0))
-            branders.append(self.chev)
-        for w in branders:
-            # 拖动是窗口手势，两档都留；点开设置只给玻璃档。
+        self.brand_btn = brand        # 测试与键盘焦点靠它定位字标
+        for w in (self.brand_wrap, brand):
+            # 拖动是窗口手势，标题栏和字标都能拖。
             w.bind('<Button-1>', self._drag_start, add='+')
             w.bind('<B1-Motion>', self._drag_move, add='+')
-            if glass:
-                w.bind('<ButtonRelease-1>', lambda e: self.on_brand())
-                w.bind('<Enter>', lambda e: self.hover(branders, True), add='+')
-                w.bind('<Leave>', lambda e: self.hover(branders, False), add='+')
-        if glass:
-            self._keyboard(self.brand_wrap, self.on_brand)
         bar.bind('<Button-1>', self._drag_start, add='+')
         bar.bind('<B1-Motion>', self._drag_move, add='+')
-        if not glass and self.pane == 'set':
+        if self.pane == 'set':
             tk.Label(bar, text='设置', bg=c['bg'], fg=c['t3'],
                      font=self.f_body).pack(side='left', padx=(self.px(6), 0))
-        if glass:
-            self.tooltips.append(ToolTip(
-                self, brand,
-                '菜单：守护状态、开机自启、日志、配置、外观与皮肤。'))
-
-    def on_brand(self):
-        """字标点击 = 玻璃档的菜单入口；极简档字标不可点（入口是「设置」）。"""
-        if self.glass:
-            self.toggle_settings()
 
     def build_list_view(self, master):
-        """插件列表。玻璃 = 圆角卡片；极简 = 方角直排。"""
+        """插件列表：方角直排，行间 1px 发丝线。"""
         c = self.colors
-        glass = self.glass
-        r_card = self.px(self.skin.radius.get('card', 20)) if glass else 0
-        self.row_h = self.px(self.skin.metrics.get('row', 52))
-        self.r_row = self.px(self.skin.radius.get('row', 14)) if glass else 0
-        body_px = self.px(8) if glass else 0
-        card_pad = self.px(6) if glass else 0
-        board_w = self.content_width() - 2 * body_px
-        row_w = board_w - 2 * card_pad
-        self.row_base = self.tok['inset'] if glass else c['bg']
+        self.row_h = self.px(self.skin.metrics.get('row', 40))
+        body_px = 0
+        card_pad = 0
+        board_w = self.content_width()
+        row_w = board_w
+        self.row_base = c['bg']
 
         board = tk.Canvas(master, bg=c['bg'], highlightthickness=0, bd=0,
                           width=board_w, height=self.row_h)
-        board.pack(fill='x', padx=body_px,
-                   pady=(self.px(4) if glass else 0, self.px(8) if glass else 0))
+        board.pack(fill='x', padx=body_px, pady=0)
         self.board = board
 
         y = card_pad
         for i, entry in enumerate(self.entries):
             row, row_h = self.make_row(board, entry, i, card_pad, row_w, y)
             y += self.row_h
-            if not glass and self.inline_open == entry.id:
+            if self.inline_open == entry.id:
                 y += self.make_inline(board, entry, card_pad, row_w, y)
 
         board_h = y + card_pad
         board.configure(height=board_h)
         self.board_full_h = board_h
-        if glass:
-            round_rect(board, 0.5, 0.5, board_w - 0.5, board_h - 0.5, r_card,
-                       fill=self.row_base, outline=c['line'])
-            board.tag_lower('all')
 
         if not self.entries:
             box = tk.Frame(master, bg=c['bg'])
@@ -1299,7 +1210,7 @@ class App(object):
     def capsule_button(self, master, text, command, primary=True):
         """整宽胶囊之外的单枚胶囊按钮（空态引导 / 皮肤安装入口 / 弹框共用）。"""
         c = self.colors
-        h = self.px(34 if self.glass else 30)
+        h = self.px(30)
         fill = c['fg'] if primary else c['fill']
         fg = c['bg'] if primary else c['fg']
         cv = tk.Canvas(master, bg=c['bg'], highlightthickness=0, bd=0,
@@ -1308,8 +1219,7 @@ class App(object):
         cv.update_idletasks()
         w = lbl.winfo_reqwidth() + self.px(36)
         cv.configure(width=w)
-        r = (h // 2) if self.glass else 0
-        round_rect(cv, 0.5, 0.5, w - 0.5, h - 0.5, r, fill=fill,
+        round_rect(cv, 0.5, 0.5, w - 0.5, h - 0.5, 0, fill=fill,
                    outline='', tags='cap')
         cv.create_window(w // 2, h // 2, window=lbl)
         for wdg in (cv, lbl):
@@ -1385,11 +1295,8 @@ class App(object):
         return 'break'
 
     def _focus_brand(self):
-        """浮层收起后焦点还给入口：玻璃档是字标，极简档是「设置」。"""
-        if getattr(self, 'glass', True):
-            w = getattr(self, 'brand_wrap', None)
-        else:
-            w = getattr(self, 'pane_btn', None)
+        """浮层收起后焦点还给入口：右上角的「设置 / ←」。"""
+        w = getattr(self, 'pane_btn', None)
         if w is not None and w.winfo_exists():
             try:
                 w.focus_set()
@@ -1471,41 +1378,52 @@ class App(object):
         return bool(self.dialog(title, body, buttons)) and can_retry
 
     def make_row(self, board, entry, i, card_pad, row_w, y):
-        """一行：图标 / 名称 / 开关 / 行尾入口。行自己是一块 Canvas，
-        圆角悬停底板画在它上面，子控件用 create_window 摆位。"""
+        """一行：图标 / 名称 / 版本号 / 状态点 / 开关 / 行尾箭头。
+        行自己是一块 Canvas，悬停底板画在它上面，子控件用 create_window 摆位。"""
         c = self.colors
-        glass = self.glass
         rh = self.row_h
         row = tk.Canvas(board, bg=self.row_base, highlightthickness=0, bd=0,
                         width=row_w, height=rh)
         board.create_window(card_pad, y, window=row, anchor='nw')
         row.w = row_w
 
-        if i and glass:
-            # 分隔线不画到图标下面：左起 50、右到距边 12（设计稿 .row + .row::before）
-            row.create_line(self.px(50), 0.5, row_w - self.px(12), 0.5,
-                            fill=c['line'])
-        elif i:
+        if i:
             row.create_line(0, 0.5, row_w, 0.5, fill=c['line'])
 
-        icon_px = self.px(self.skin.metrics.get('icon', 22))
+        icon_px = self.px(self.skin.metrics.get('icon', 16))
         pad_l = self.px(14)
-        gap = self.px(14 if glass else 10)
-        icon = Glyph(row, self, entry.icon, size=icon_px)
+        gap = self.px(10)
+        # v2.15.0 状态点：开关说「你要不要」，点说「现在到底跑没跑」。
+        dot_mode = self.plugin_dot
+        dot = plugin_dot_state(entry, self.runtime_state.get(entry.id),
+                               self.vars[entry.id].get()) \
+            if dot_mode != 'off' else None
+        dot_col = plugin_dot_color(c, dot) if dot else None
+        # 角标档的关闭态不挂：图标本身就是灰的（t2×0.84），灰点贴上去只差
+        # 一档亮度，7px 也分不开；开关已经把「这行是关的」说清楚了。
+        icon_badge = dot_col if (dot_mode == 'badge' and dot != 'off') else None
+        icon = Glyph(row, self, entry.icon, size=icon_px, badge=icon_badge)
         icon.set_bg(self.row_base)
-        row.create_window(pad_l, rh // 2, window=icon, anchor='w')
+        # 角标把 Canvas 撑到 icon_px + px(6) 且图标下移 px(6)，视觉中心跟着
+        # 掉了 px(3)——y 减回来，六行图标才在同一条横线上。
+        row.create_window(pad_l, rh // 2 - (self.px(3) if icon_badge else 0),
+                          window=icon, anchor='w')
 
-        sw_w = self.px(46 if glass else 36)
-        tail = self.px(30 if glass else 22)
+        sw_w = self.px(36)
+        tail = self.px(22)
         tail_gap = self.px(4)
         name_x = pad_l + icon_px + gap
-        # v2.12.1：极简档没有设置浮层，版本号必须有地方露出来——行尾留一枚
-        # 「v2.1.1」小字（设计稿 .p-row .hint 的位置），展开后来源行再写全。
+        # v2.12.1：版本号必须有地方露出来——行尾留一枚「v2.1.1」小字
+        # （设计稿 .p-row .hint 的位置），展开后来源行再写全。
         ver_lbl = None
-        ver_w = self.px(44) if (not glass and getattr(entry, 'version', '')) \
-            else 0
+        dotv = None
+        ver_w = self.px(44) if getattr(entry, 'version', '') else 0
+        # 行内档的点槽 16px（5+6+5）从行尾 px(24) 的冗余里借 10px 出来：
+        # 名称列 310→300，最长的「关机清理回收站」约 91px，仍然宽裕。
+        # 另外两档不占宽，name_w 保持原样。
+        dot_slot = self.px(10) if (dot_mode == 'row' and ver_w) else 0
         name_w = max(self.px(40), row_w - name_x - tail - tail_gap
-                     - sw_w - self.px(24) - ver_w)
+                     - sw_w - self.px(24) - ver_w - dot_slot)
         name = tk.Label(row, text=entry.name, bg=self.row_base, fg=c['fg'],
                         font=self.f_row, anchor='w')
         row.create_window(name_x, rh // 2, window=name, anchor='w',
@@ -1513,12 +1431,24 @@ class App(object):
         if entry.tip:
             self.tooltips.append(ToolTip(self, name, entry.tip))
         if ver_w:
+            # 版本号跟着点一起说话：异常提到 fg（不只靠红色传达），
+            # 关闭退到 t4（整行安静下来）。点本身仍是主信号。
+            ver_fg = c['t3']
+            if dot == 'bad':
+                ver_fg = c['fg']
+            elif dot == 'off':
+                ver_fg = c['t4']
             ver_lbl = tk.Label(row, text='v%s' % entry.version,
-                               bg=self.row_base, fg=c['t3'],
+                               bg=self.row_base, fg=ver_fg,
                                font=self.f_small, anchor='e')
-            row.create_window(row_w - self.px(10) - tail - tail_gap - sw_w
-                              - self.px(6), rh // 2, window=ver_lbl,
-                              anchor='e')
+            ver_x = (row_w - self.px(10) - tail - tail_gap - sw_w
+                     - self.px(6))
+            row.create_window(ver_x, rh // 2, window=ver_lbl, anchor='e')
+            if dot_mode == 'row' and dot:
+                dotv = Dot(row, self, dot_col, size=self.px(6))
+                dotv.set_bg(self.row_base)
+                row.create_window(ver_x - ver_w - self.px(5), rh // 2,
+                                  window=dotv, anchor='e')
 
         sw = Switch(row, self, value=self.vars[entry.id].get(),
                     command=self.on_toggle)
@@ -1529,51 +1459,40 @@ class App(object):
             sw.set_enabled(False)
         self.switches[entry.id] = sw
 
-        if glass:
-            gw = tk.Canvas(row, width=tail, height=tail, bg=self.row_base,
-                           highlightthickness=0, bd=0, cursor='hand2')
-            gear = Glyph(gw, self, 'cfg', size=self.px(17))
-            gear.set_bg(self.row_base)
-            gw.create_window(tail // 2, tail // 2, window=gear)
-            row.create_window(row_w - self.px(10), rh // 2, window=gw, anchor='e')
-            self.plugin_gears[entry.id] = gw
-            self.tooltips.append(ToolTip(
-                self, gw, '设置「%s」：调整这个插件的运行方式，\n卸载也在这里。'
-                % entry.name))
-            for w in (gw, gear):
-                w.bind('<ButtonRelease-1>',
-                       lambda e, ent=entry: self.on_plugin_settings(ent))
-            self._keyboard(gw, lambda ent=entry: self.on_plugin_settings(ent))
-        else:
-            more = Glyph(row, self, 'chev_r', size=self.px(14))
-            more.set_bg(self.row_base)
-            row.create_window(row_w - self.px(12), rh // 2, window=more,
-                              anchor='e', )
-            self.plugin_gears[entry.id] = row
-            row.configure(cursor='hand2')
-            row.bind('<ButtonRelease-1>',
-                     lambda e, ent=entry: self.toggle_inline(ent))
-            self._keyboard(row, lambda ent=entry: self.toggle_inline(ent))
-            # v2.10.0 修「点不开」：行面大部分被子控件盖住（Tk 事件不穿透
-            # create_window），只绑 row 时点名称/图标/右箭头全无响应。
-            # 开关除外——它有自己的 toggle，不能连带展开。
-            for w in (icon, name, more):
-                w.configure(cursor='hand2')
-                w.bind('<ButtonRelease-1>',
-                       lambda e, ent=entry: self.toggle_inline(ent))
-            if ver_lbl is not None:
-                ver_lbl.configure(cursor='hand2')
-                ver_lbl.bind('<ButtonRelease-1>',
-                             lambda e, ent=entry: self.toggle_inline(ent))
+        more = Glyph(row, self, 'chev_r', size=self.px(14))
+        more.set_bg(self.row_base)
+        row.create_window(row_w - self.px(12), rh // 2, window=more, anchor='e')
+        self.plugin_gears[entry.id] = row
+        row.configure(cursor='hand2')
+        row.bind('<ButtonRelease-1>',
+                 lambda e, ent=entry: self.toggle_inline(ent))
+        self._keyboard(row, lambda ent=entry: self.toggle_inline(ent))
+        # v2.10.0 修「点不开」：行面大部分被子控件盖住（Tk 事件不穿透
+        # create_window），只绑 row 时点名称/图标/右箭头全无响应。
+        # 开关除外——它有自己的 toggle，不能连带展开。
+        # 状态点也是 create_window 的子控件，不绑就点不动（同一类坑）。
+        clickable = [icon, name, more]
+        if dotv is not None:
+            clickable.append(dotv)
+        for w in clickable:
+            w.configure(cursor='hand2')
+            w.bind('<ButtonRelease-1>',
+                   lambda e, ent=entry: self.toggle_inline(ent))
+        if ver_lbl is not None:
+            ver_lbl.configure(cursor='hand2')
+            ver_lbl.bind('<ButtonRelease-1>',
+                         lambda e, ent=entry: self.toggle_inline(ent))
 
         kids = [icon, name, sw]
         if ver_lbl is not None:
             kids.append(ver_lbl)
-        self.bind_row_hover(row, kids, (gear if glass else None))
+        if dot_mode == 'row' and dot:
+            kids.append(dotv)
+        self.bind_row_hover(row, kids, None)
         return row, rh
 
     def bind_row_hover(self, row, kids, tail):
-        """整行悬停：画一层圆角底板，子控件底色同步跟上（Tk 没有真透明）。"""
+        """整行悬停：铺一层方角底板，子控件底色同步跟上（Tk 没有真透明）。"""
         c = self.colors
         rh = row.winfo_reqheight() or self.row_h
         w = getattr(row, 'w', 0) or row.winfo_reqwidth()
@@ -1582,12 +1501,8 @@ class App(object):
             row.delete('hl')
             col = c['hover'] if on else self.row_base
             if on:
-                if self.r_row:
-                    round_rect(row, 1, 1, w - 1, rh - 1, self.r_row,
-                               fill=col, outline='', tags='hl')
-                else:
-                    row.create_rectangle(1, 1, w - 1, rh - 1, fill=col,
-                                         outline='', tags='hl')
+                row.create_rectangle(1, 1, w - 1, rh - 1, fill=col,
+                                     outline='', tags='hl')
                 row.tag_lower('hl')
             for k in kids:
                 if k is not None:
@@ -1893,12 +1808,15 @@ class App(object):
             row.pack_propagate(False)
             return row
 
-        def line(text, value='', command=None):
+        def line(text, value='', command=None, accent=False):
             row = row_box()
             lb = tk.Label(row, text=text, bg=bg, fg=c['fg'], font=self.f_body,
                           anchor='w', padx=pad_l)
             lb.pack(side='left', fill='y')
-            val = tk.Label(row, text=value, bg=bg, fg=c['t3'],
+            # accent=True 只给「守护状态」：那是这页里唯一一条「现在活着」的
+            # 事实，用强调色与开关同源；其余行的值保持 t3，不抢注意力。
+            val = tk.Label(row, text=value, bg=bg,
+                           fg=(c['inv'] if accent else c['t3']),
                            font=mono, anchor='e', padx=pad_r)
             val.pack(side='right', fill='y')
             if command:
@@ -1912,6 +1830,10 @@ class App(object):
                 self._keyboard(row, command)
                 self._set_focusables.append(row)
             tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
+            # 值标签挂到行上：设置页有一批「会变的事实」（守护状态/进程事件/
+            # 插件健康），刷新只该改这几个 label 的文字，不整页重建——重建会
+            # 丢焦点、跳滚动位置，用户正看着的那一行会跑掉。
+            row.value_label = val
             return row
 
         def radio_line(text, value, on, command, disabled=False):
@@ -1924,19 +1846,22 @@ class App(object):
             rad = tk.Canvas(row, width=self.px(13), height=self.px(13),
                             bg=bg, highlightthickness=0, bd=0)
             rad.pack(side='left', padx=(pad_l, self.px(10)))
-            ring = c['t4'] if not on else c['fg']
+            # v2.15.0 B 案：选中圈（环 + 点）吃强调色。
+            ring = c['t4'] if not on else c['inv']
             rad.create_oval(0.5, 0.5, self.px(13) - 0.5, self.px(13) - 0.5,
                             outline=ring, width=1)
             if on:
                 ins = self.px(3)
                 rad.create_oval(ins, ins, self.px(13) - ins,
-                                self.px(13) - ins, fill=c['fg'], outline='')
+                                self.px(13) - ins, fill=c['inv'], outline='')
             lb = tk.Label(row, text=text, bg=bg,
                           fg=(c['t3'] if disabled else c['fg']),
                           font=self.f_body, anchor='w')
             lb.pack(side='left', fill='y')
-            val = tk.Label(row, text=value, bg=bg,
-                           fg=(c['danger'] if disabled else c['t3']),
+            # v2.15.0 B 案：「当前」吃强调色。非选中行的性能标签（最省 /
+            # 均衡）仍是 t3——它只是说明，不该抢。
+            val_fg = c['danger'] if disabled else (c['inv'] if on else c['t3'])
+            val = tk.Label(row, text=value, bg=bg, fg=val_fg,
                            font=mono, anchor='e', padx=pad_r)
             val.pack(side='right', fill='y')
             if command is not None and not disabled:
@@ -1957,8 +1882,8 @@ class App(object):
         def seg_row(label, options, cur_key, command):
             """`标签 … [ 选项 | 选项 ]` 一行：明暗与窗口大小共用。
 
-            选中的那一格用 fg 底 / bg 字（黑白翻转），不再靠描边——
-            极简档没有强调色，翻转是唯一不需要额外颜色的选中态。
+            选中的那一格用强调色底 / 反色字（v2.15.0 前是 fg 底 / bg 字）。
+            默认皮肤的强调色就是近黑，所以观感仍是黑白翻转；配色主题才会显色。
             """
             row = row_box()
             tk.Label(row, text=label, bg=bg, fg=c['fg'], font=self.f_body,
@@ -1967,10 +1892,12 @@ class App(object):
             seg.pack(side='right', padx=pad_r)
             for key, lab in options:
                 on = key == cur_key
+                # v2.15.0 B 案：选中格改成强调色底 + invfg 字。默认皮肤里
+                # inv/invfg 就是 fg/bg 那一对，所以老观感不变。
                 b = tk.Label(seg, text=lab, font=self.f_small,
                              padx=self.px(8), pady=self.px(2),
-                             bg=(c['fg'] if on else c['fill']),
-                             fg=(c['bg'] if on else c['t2']), cursor='hand2')
+                             bg=(c['inv'] if on else c['fill']),
+                             fg=(c['invfg'] if on else c['t2']), cursor='hand2')
                 b.pack(side='left')
                 b.bind('<ButtonRelease-1>', lambda e, k=key: command(k))
                 self._keyboard(b, lambda k=key: command(k))
@@ -1987,7 +1914,7 @@ class App(object):
             cur = sk_.id == self.skin.id
             radio_line(sk_.name, '当前' if cur else sk_.perf_label, cur,
                        lambda i=sk_.id: self.set_skin(i))
-        line('从文件安装皮肤…', '.wbskin', self.on_install_skin)
+        line('从文件安装皮肤…', '.wbskin / .zip', self.on_install_skin)
 
         # v2.12.1：明暗（黑/白）必须在设置页里就能选。之前只在「外观与皮肤…」
         # 浮层里有，用户进了极简设置页只能看到白色，等于黑色入口消失了。
@@ -1997,6 +1924,11 @@ class App(object):
         # v2.12.0：窗口大小三档。和明暗同一排法，选完按新倍率重建当前页。
         seg_row('窗口大小', tuple((k, lab) for k, lab, _z in UI_SIZES),
                 self.ui_size, self.set_ui_size)
+        # v2.15.0：状态点挂法。默认「行内」，多数人不用进这一页；
+        # 「不显示」留着——有人就是不要任何额外的点。
+        seg_row('插件状态点', (('row', '行内'), ('badge', '角标'),
+                             ('off', '不显示')),
+                self.plugin_dot, self.set_plugin_dot)
 
         group('启动与守护')
         boot_line = row_box()
@@ -2022,15 +1954,47 @@ class App(object):
             self.switches[key] = tsw
             self._set_focusables.append(tsw)
             tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
-        line('守护状态', short_guard_state())
+        # v2.16.0：「守护状态」右侧带一枚启停按钮。
+        # 以前这一行只会说「守护没在运行」——用户看得到问题，却没有解决它的
+        # 入口（启动藏在二级菜单里，默认还收进托盘）。状态和「能怎么办」
+        # 放同一行：看到问题的地方就是能下手的地方。
+        snap0 = guard_snapshot(self.probe)
+        self.set_guard = None
+
+        def guard_line(snap):
+            """守护状态 + 启停按钮。按钮按状态换装（见 _paint_guard_action）。"""
+            row = row_box()
+            tk.Label(row, text='守护状态', bg=bg, fg=c['fg'], font=self.f_body,
+                     anchor='w', padx=pad_l).pack(side='left', fill='y')
+            act = tk.Label(row, font=self.f_small, padx=self.px(10),
+                           pady=self.px(1))
+            # pack 先来先占：按钮先 pack 才贴最右，值再排它左边。
+            act.pack(side='right', padx=(self.px(6), pad_r))
+            val = tk.Label(row, text=snap['state'], bg=bg, fg=c['inv'],
+                           font=mono, anchor='e')
+            val.pack(side='right', fill='y')
+            self.set_guard = {'row': row, 'val': val, 'act': act}
+            self._paint_guard_action(snap)
+            act.bind('<Button-1>', lambda e: self.on_guard_action())
+            act.bind('<Enter>', lambda e: self._hover_guard_action(True),
+                     add='+')
+            act.bind('<Leave>', lambda e: self._hover_guard_action(False),
+                     add='+')
+            self._keyboard(row, self.on_guard_action)
+            self._set_focusables.append(row)
+            tk.Frame(wrap, bg=c['line'], height=1).pack(fill='x')
+            return row
+
+        guard_line(snap0)
         # v2.11.3：把"守护活着"拆成两件可核对的事——进程事件通道是否在工作、
         # 插件是否都加载起来了。两者都不影响守护进程存在，但都影响功能是否生效。
-        ev_text, pl_text, ev_note = guard_diagnostics()
-        line('进程事件', ev_text)
-        line('插件健康', pl_text)
-        if ev_note:
-            tk.Label(wrap, text=ev_note, bg=bg, fg=c['t3'], font=self.f_small,
-                     anchor='w', justify='left',
+        ev_row = line('进程事件', snap0['events'])
+        pl_row = line('插件健康', snap0['plugins'])
+        self.set_guard['ev'] = ev_row.value_label
+        self.set_guard['pl'] = pl_row.value_label
+        if snap0['note']:
+            tk.Label(wrap, text=snap0['note'], bg=bg, fg=c['t3'],
+                     font=self.f_small, anchor='w', justify='left',
                      wraplength=self.px(250)).pack(
                 fill='x', padx=pad_l, pady=(0, self.px(4)))
 
@@ -2042,216 +2006,11 @@ class App(object):
         line('WBOX', VERSION)
         line('打开日志目录', '', self.on_log)
         line('编辑配置文件', '', self.on_cfg)
+        # v2.18.0：齿轮浮层删除后，「导出诊断」原本只在那个不可达的菜单里，
+        # 这边补回设置页——诊断包是排障用的，不该因为换个入口就消失。
+        line('导出诊断', '', self.on_diag)
         # 窗口按内容长高，最后一行贴着窗口边会看起来像被裁掉：留一条呼吸位
         tk.Frame(wrap, bg=bg, height=self.px(10)).pack(fill='x')
-
-    # ---- 二级设置：浏览器式弹出菜单 ----
-    def toggle_settings(self):
-        if self.settings_win and self.settings_win.winfo_exists():
-            self.close_settings()
-        else:
-            self.open_settings()
-
-    def _menu_outside(self, ev):
-        """点主窗口空白处收起菜单；字标自己交给 ButtonRelease-1 的 toggle。"""
-        if getattr(self, 'skin_win', None) and self.skin_win.winfo_exists():
-            if ev.widget not in (self.brand_wrap, self.gear_btn):
-                self.close_skin_settings()
-        if not (self.settings_win and self.settings_win.winfo_exists()):
-            return
-        if ev.widget is self.gear_wrap or ev.widget is self.gear_btn:
-            return
-        self.close_settings()
-
-    def open_settings(self):
-        if self.settings_win and self.settings_win.winfo_exists():
-            self.place_menu()
-            return
-        self.close_plugin_settings()
-        c = self.colors
-        win = tk.Toplevel(self.root)
-        win.wm_overrideredirect(True)        # 无系统标题栏，才像浏览器菜单
-        win.configure(bg=c['line'])
-        win.resizable(False, False)
-        # 不能用 transient：Windows 会把无标题栏浮层压到 owner 窗口后面，
-        # 菜单会被主窗口盖住。改成纯 topmost，靠全局左键判定负责收起。
-        try:
-            win.wm_attributes('-topmost', True)
-        except Exception:
-            pass
-        if self.probe:                       # 布局自检时不要闪一个窗口到桌面上
-            win.attributes('-alpha', 0.0)
-        c = self.popup_colors('menu_base')
-        outer = tk.Frame(win, bg=c['line'], padx=1, pady=1)
-        outer.pack(fill='both', expand=True)
-        cv = tk.Canvas(outer, bg=c['bg'], highlightthickness=0, bd=0)
-        cv.pack(fill='both', expand=True)
-        inner = tk.Frame(cv, bg=c['bg'])
-        self._menu_window_id = cv.create_window((0, 0), window=inner, anchor='nw')
-        self.settings_win = win
-        self.settings_outer = outer
-        self.settings_canvas = cv
-        self.settings_inner = inner
-        # 每次打开菜单都重读一次守护写的运行期状态：面板可能已经开了几个小时，
-        # 期间某个插件被降级/自愈了，菜单里的提示要跟着变。
-        self.runtime_state = read_plugin_states()
-        self.build_settings(inner)
-        self.place_menu()
-        win.bind('<Escape>', lambda e: self.close_settings())
-        self.refresh_status()
-        self._menu_was_pressed = False
-        win.after(120, self._menu_watch)
-        if getattr(self, 'chev', None) is not None and self.chev.winfo_exists():
-            self.chev.flip = True
-            self.chev.draw()
-        self._pop_in(win, slide=self.px(6))
-        # 菜单打开焦点移入首项（文案规范 §4）；Esc 关闭后焦点还给字标
-        chain = getattr(win, '_focus_chain', [])
-        if chain:
-            try:
-                chain[0].focus_set()
-            except Exception:
-                pass
-
-    def _menu_watch(self):
-        """全局左键：按在菜单 / 齿轮之外就收起（浏览器菜单的点击外部关闭）。
-
-        Tk 绑定只能收到本进程窗口的点击，这里用 GetAsyncKeyState +
-        GetCursorPos 读全局状态，跨进程点击其它程序同样生效；只在"新一次按下"
-        的瞬间判断位置，不干扰菜单内的开关与拖动。
-        """
-        win = self.settings_win
-        if not (win and win.winfo_exists()):
-            return
-        try:
-            u = ctypes.windll.user32
-            u.GetAsyncKeyState.argtypes = [ctypes.c_int]
-            u.GetAsyncKeyState.restype = ctypes.c_short
-            pressed = bool(int(u.GetAsyncKeyState(0x01)) & 0x8000)
-            if pressed and not self._menu_was_pressed and not self.probe:
-                u.GetCursorPos.argtypes = [ctypes.POINTER(POINT)]
-                pt = POINT()
-                u.GetCursorPos(ctypes.byref(pt))
-                x, y = pt.x, pt.y
-                pad = self.px(4)
-                mx, my = win.winfo_rootx(), win.winfo_rooty()
-                in_menu = (mx - pad <= x <= mx + win.winfo_width() + pad and
-                           my - pad <= y <= my + win.winfo_height() + pad)
-                g = self.gear_wrap
-                in_gear = False
-                if g and g.winfo_exists():
-                    gx, gy = g.winfo_rootx(), g.winfo_rooty()
-                    in_gear = (gx <= x <= gx + g.winfo_width() and
-                               gy <= y <= gy + g.winfo_height())
-                if not in_menu and not in_gear:
-                    self.close_settings()
-                    return
-            self._menu_was_pressed = pressed
-        except Exception:
-            pass
-        try:
-            win.after(120, self._menu_watch)
-        except Exception:
-            pass
-
-    def place_menu(self):
-        """贴齿轮右下方展开；下方不够改向上，仍不够就限高并启用滚轮。"""
-        win = self.settings_win
-        inner, cv = self.settings_inner, self.settings_canvas
-        if not (win and inner and cv and win.winfo_exists()):
-            return
-        # 重排会打断入场链：先把透明度落回 1，别留半透明菜单
-        self.cancel_tween(('pop', id(win)))
-        if not self.probe:
-            try:
-                win.attributes('-alpha', 1.0)
-            except Exception:
-                pass
-        win.update_idletasks()
-        lx, ly, sw, sh = work_area()
-        w = min(self.px(310), max(self.px(260), sw - self.px(20)))
-        inner_w = w - 2
-        cv.itemconfigure(self._menu_window_id, width=inner_w)
-        win.update_idletasks()
-        need_h = inner.winfo_reqheight() + 2
-        # 设计稿 max-height:560：超了就让菜单自己滚，别让一屏菜单把桌面顶满
-        need_h = min(need_h, self.px(560))
-        gear = (self.gear_wrap if self.gear_wrap and
-                self.gear_wrap.winfo_exists() else self.root)
-        gx, gy = gear.winfo_rootx(), gear.winfo_rooty()
-        gw, gh = gear.winfo_width(), gear.winfo_height()
-        # 左沿对齐字标热区（设计稿 v3.4：「浮层从字标正下方拉出，左沿对齐字标」）。
-        # 之前是右沿对齐，字标一挪菜单就跑到窗口外面去。
-        x = max(lx + self.px(8), min(gx, lx + sw - w - self.px(8)))
-        below = gy + gh + self.px(6)
-        avail_below = ly + sh - below - self.px(8)
-        avail_above = gy - ly - self.px(8)
-        if need_h <= avail_below:
-            y, h = below, need_h
-        elif need_h <= avail_above:
-            y, h = gy - need_h - self.px(6), need_h
-        elif need_h <= (ly + sh - self.px(8)) - (ly + self.px(8)):
-            # 上下都放不下一整块，但屏幕本身放得下：把菜单上抬到刚好完整显示，
-            # 允许它盖住主窗口一部分。截断比遮挡更糟——截断会让最后几项
-            #（保存设置 / 关闭菜单）直接消失，用户以为菜单没有这些功能。
-            h = need_h
-            y = max(ly + self.px(8), min(below, ly + sh - self.px(8) - need_h))
-        elif avail_below >= avail_above:
-            y, h = below, max(self.px(160), avail_below)
-        else:
-            h = max(self.px(160), avail_above)
-            y = ly + self.px(8)
-        h = min(h, max(self.px(160), sh - self.px(16)))
-        y = max(ly + self.px(8), min(y, ly + sh - h - self.px(8)))
-        win.geometry('%dx%d+%d+%d' % (w, h, x, y))
-        try:
-            win.lift()
-            win.wm_attributes('-topmost', True)
-        except Exception:
-            pass
-        cv.configure(scrollregion=(0, 0, inner_w, inner.winfo_reqheight()))
-        self._bind_wheel(cv, inner)
-        # 与插件浮层同一口径：内容高度可能在 place 之后才 settling（字体度量 /
-        # 换行），scrollregion 不跟随就会差几像素滚不到底。
-        inner.bind('<Configure>', lambda e: cv.configure(
-            scrollregion=(0, 0, inner_w, inner.winfo_reqheight())))
-        self._menu_fade_update(win, cv, w, h)
-
-    def _menu_fade_update(self, win, cv, w, h):
-        """菜单底部 34px 渐隐（设计稿 .m-fade）：内容还能滚时才出现。
-
-        Tk 控件没有逐像素 alpha，渐隐用 stipple 抖动带模拟四档覆盖率；
-        载体 Canvas 的底色设成 magic 色并给菜单窗开 -transparentcolor，
-        抖动的「洞」才真的透下去而不是露出一块 magic 色方块。
-        """
-        old = getattr(self, '_menu_fade', None)
-        if old is not None:
-            try:
-                old.destroy()
-            except Exception:
-                pass
-            self._menu_fade = None
-        inner = self.settings_inner
-        if self.probe or inner is None or not inner.winfo_exists():
-            return
-        if inner.winfo_reqheight() <= h - 2:
-            return
-        magic = '#010203'
-        try:
-            win.wm_attributes('-transparentcolor', magic)
-        except Exception:
-            return
-        fh = self.px(34)
-        f = tk.Canvas(win, bg=magic, highlightthickness=0, bd=0, height=fh)
-        f.place(x=1, y=h - fh - 1, width=w - 2, height=fh)
-        bg = cv.cget('bg')
-        bh = fh / 5.0
-        for i, stip in enumerate(('gray12', 'gray25', 'gray50', 'gray75')):
-            f.create_rectangle(0, i * bh, w, (i + 1) * bh, fill=bg,
-                               outline='', stipple=stip)
-        f.create_rectangle(0, 4 * bh, w, fh, fill=bg, outline='')
-        self._bind_wheel(cv, f)
-        self._menu_fade = f
 
     def _bind_wheel(self, cv, inner):
         def scroll(ev):
@@ -2264,228 +2023,16 @@ class App(object):
             except Exception:
                 pass
 
-    def close_settings(self):
-        if self.settings_win and self.settings_win.winfo_exists():
-            try:
-                self.settings_win.destroy()
-            except Exception:
-                pass
-        self.settings_win = None
-        self.settings_outer = None
-        self.settings_canvas = None
-        self.settings_inner = None
-        self._menu_window_id = None
-        self._menu_fade = None
-        self.status_label = None
-        self.theme_buttons = {}
-        self.switches.pop('boot', None)
-        self.switches.pop('tray', None)
-        self.switches.pop('notify', None)
-        if getattr(self, 'chev', None) is not None:
-            try:
-                self.chev.flip = False
-                self.chev.draw()
-            except Exception:
-                pass
-        self._focus_brand()
-
-    def menu_row(self, master, text, icon, hint='', command=None,
-                 switch=False, mark=False, close_after=True, disabled=False,
-                 switch_key=None, switch_var=None, switch_cmd=None):
-        """浏览器菜单行：图标 + 名称 + 右侧提示/开关/勾选，整行悬停与点击。
-
-        disabled=True 用于只读模式：文字与图标降到最弱灰阶、不绑点击（不改变行高
-        与排布，所以布局与文案与正常模式完全一致）。
-        """
-        c = self.colors
-        row = tk.Frame(master, bg=c['bg'])
-        row.pack(fill='x', pady=(self.px(1), 0))
-        row._menu_cmd = None
-        row._menu_switch = None
-        if getattr(self, '_menu_rows', None) is not None:
-            self._menu_rows.append(row)
-        g = Glyph(row, self, icon, size=self.px(16))
-        g.pack(side='left', padx=(self.px(14), self.px(10)))
-        lab = tk.Label(row, text=text, bg=c['bg'],
-                       fg=(c['t3'] if disabled else c['fg']),
-                       font=self.f_body, anchor='w')
-        lab.pack(side='left', fill='x', expand=True, ipady=self.px(8))
-        widgets = [g, lab]
-        if disabled:
-            g.set_dim(True)
-        row.hint_label = None
-        right = None
-        if switch:
-            var = self.boot_var if switch_var is None else switch_var
-            cmd = self.on_boot_toggle if switch_cmd is None else switch_cmd
-            right = Switch(row, self, value=bool(var.get()), command=cmd)
-            if disabled:
-                right.set_enabled(False)
-            self.switches[switch_key or 'boot'] = right
-            row._menu_switch = right
-        elif mark:
-            right = Glyph(row, self, 'check', size=self.px(14))
-            if disabled:
-                right.set_dim(True)
-        if right is not None:
-            right.pack(side='right', padx=(self.px(8), self.px(12)))
-            widgets.append(right)
-        elif hint:
-            h = tk.Label(row, text=hint, bg=c['bg'], fg=c['t3'],
-                         font=self.f_small, anchor='e')
-            h.pack(side='right', padx=(self.px(8), self.px(14)))
-            widgets.append(h)
-            row.hint_label = h
-        if disabled:
-            return row
-        self.bind_hover(row, widgets)
-        if command:
-            def run(ev=None):
-                if close_after:
-                    self.close_settings()
-                command()
-            for w in (row,) + tuple(widgets):
-                w.bind('<Button-1>', run)
-            row._menu_cmd = run
-            self._keyboard(row, run)
-        return row
-
-    def menu_sep(self, master):
-        tk.Frame(master, height=1, bg=self.colors['line']).pack(
-            fill='x', pady=(self.px(7), self.px(7)))
-
-    def plugin_switch_live(self, entry, cfg=None):
-        """菜单提示用的「开关当前值」。
-
-        优先读面板上那个开关的实时值：用户拨了开关但还没点保存时，菜单里的
-        「已启用 / 已禁用」必须跟着变（磁盘上的 cfg 只有保存后才更新）。
-        没有开关行的插件（home=False / 加载失败）回落读配置计算。
-        """
-        var = self.vars.get(entry.id) if getattr(self, 'vars', None) else None
-        if var is not None:
-            try:
-                return bool(var.get())
-            except Exception:
-                pass
-        if cfg is None:
-            cfg = effective_cfg(entries=self.entries_all)
-        return plugin_switch_state(entry, cfg)
-
-    def build_settings(self, inner):
-        """浏览器式菜单：每项一行 / 依次排列，分组只用 1px 分隔线。"""
-        c = self.colors
-        ro = self.readonly
-        self._menu_rows = []
-        tk.Frame(inner, height=self.px(6), bg=c['bg']).pack(fill='x')
-
-        def action(text, icon, command, hint='', disabled=False):
-            return self.menu_row(inner, text, icon, hint=hint, command=command,
-                                 disabled=disabled)
-
-        # 守护。只读模式下"停止守护"要写 stop.flag、"重扫游戏库"要写 flag 文件，
-        # 都落在不可写的安装目录里，所以与开机自启一起置灰；
-        # "启动守护"只是触发计划任务、不写配置，保持可用。
-        st = self.menu_row(inner, '守护状态', 'dot',
-                           hint=('需要管理员权限' if ro
-                                 else short_guard_state(self.probe)))
-        self.status_label = st.hint_label
-        if ro:
-            # 置灰必配解释（文案规范 §4）：为什么灰 + 怎么办，两行里的第二行
-            tk.Label(inner, text='右键程序图标，以管理员身份重新打开后即可修改',
-                     bg=c['bg'], fg=c['t3'], font=self.f_small,
-                     anchor='w', justify='left').pack(
-                         fill='x', padx=self.px(14))
-        action('启动守护', 'play', self.on_start)
-        action('停止守护', 'stop', self.on_stop, disabled=ro)
-        self.menu_row(inner, '开机自启', 'boot', switch=True, disabled=ro)
-        self.menu_row(inner, '启动后收进托盘', 'tray', switch=True,
-                      switch_key='tray', switch_var=self.tray_var,
-                      switch_cmd=self.on_tray_toggle, disabled=ro)
-        self.menu_row(inner, '游戏结束提示', 'bell', switch=True,
-                      switch_key='notify', switch_var=self.notify_var,
-                      switch_cmd=self.on_notify_toggle, disabled=ro)
-
-        # 维护
-        self.menu_sep(inner)
-        action('重新扫描游戏', 'rescan', self.on_rescan, disabled=ro)
-        action('查看日志', 'log', self.on_log)
-        action('导出诊断', 'log', self.on_diag, hint='打包日志与运行状态')
-        action('编辑配置文件', 'cfg', self.on_cfg)
-
-        # 插件：标题 + 每个插件一行 + 打开插件目录，全部由注册表生成。
-        # 加载失败的插件也留一行（右侧写「加载失败」），用户才知道有东西没跑起来；
-        # 但主页面不显示它们（见 build_main）。
-        self.menu_sep(inner)
-        total = len(self.entries_all)
-        self.menu_row(inner, '已安装插件', 'dot',
-                      hint=('共 %d 个' % total) if total else '还没有安装插件')
-        hint_cfg = effective_cfg(entries=self.entries_all)
-        for entry in self.entries_all:
-            hint = plugin_hint(entry, self.runtime_state.get(entry.id),
-                               self.plugin_switch_live(entry, hint_cfg))
-            r = self.menu_row(inner, entry.name, entry.icon, hint=hint,
-                              command=lambda d=entry.dir: self.on_plugin_dir(d))
-            # 异常态给自救 Tooltip，不弹框（文案规范 §2.1）
-            tip = None
-            if hint.startswith('未能加载'):
-                tip = '这个插件没能加载。可以在齿轮菜单里查看日志了解原因。'
-            elif hint.startswith('运行异常'):
-                tip = '这个插件最近运行不太稳定。可以关掉再打开，或查看日志。'
-            if tip:
-                labs = [w for w in r.winfo_children() if isinstance(w, tk.Label)]
-                if labs:
-                    self.tooltips.append(ToolTip(self, labs[0], tip))
-        action('打开插件目录', 'folder', self.on_plugins_dir)
-        # v2.11.3：本体不带插件。官方插件在独立仓库分发，这里给一条直达入口，
-        # 免得用户只看到一个空面板不知道去哪儿拿。
-        action('浏览插件库', 'link', self.on_plugin_repo,
-               hint='官方插件下载')
-        # v2.3.0：随安装包分发的《插件开发指南》。文案刻意不用技术词
-        # （不写 .md / .html / docs\），用户看到的就是"指南"两个字。
-        action('插件开发指南', 'log', self.on_guide,
-               hint='写插件看这一份')
-
-        # 外观：v2.7.0 起收成一行。原来「浅色主题 / 深色主题」两行只够切明暗，
-        # 皮肤多了以后两行装不下，改成打开独立的皮肤面板（右侧带当前皮肤名）。
-        self.menu_sep(inner)
-        action('外观与皮肤…', 'sun' if self.theme == 'light' else 'moon',
-               self.open_skin_settings,
-               hint='%s · %s%s' % (
-                   self.skin.name,
-                   '跟随系统 ' if self.appearance_pref == 'system' else '',
-                   '浅色' if self.theme == 'light' else '深色'))
-
-        # 收尾
-        self.menu_sep(inner)
-        action('保存设置', 'check', lambda: self.on_save(True))
-        action('关闭菜单', 'close', self.close_settings, hint='Esc')
-        self.sep(inner, pady=(self.px(7), 0))
-        tk.Label(inner, text='v%s · 改动立即生效' % VERSION, bg=c['bg'],
-                 fg=c['t3'], font=self.f_small).pack(
-                     anchor='w', padx=self.px(14),
-                     pady=(self.px(2), self.px(10)))
-        # 菜单 Tab 链：自上而下，开关行 focus 落在开关本身，其余落在整行
-        chain = []
-        for r in self._menu_rows:
-            if getattr(r, '_menu_switch', None) is not None:
-                chain.append(r._menu_switch)
-            elif getattr(r, '_menu_cmd', None) is not None:
-                chain.append(r)
-        if self.settings_win is not None:
-            self._set_chain(self.settings_win, chain)
-
-    # ---- 外观与皮肤 ----
     def open_skin_settings(self):
         """皮肤面板：卡片列所有皮肤 + 明暗分段 + 安装/卸载。
 
-        与齿轮菜单、插件设置共享同一条规矩：无标题栏浮层、topmost、点外部收起。
+        与插件设置浮层同一套规矩：无标题栏浮层、topmost、点外部收起。
         点皮肤立即换（不等「保存」），换完面板留在原地——用户可以连着试两套再决定。
         内容超屏时走 Canvas 视口滚轮，不截断（v2.9.0 对齐设计稿）。
         """
         if getattr(self, 'skin_win', None) and self.skin_win.winfo_exists():
             self.place_skin_settings()
             return
-        self.close_settings()
         self.close_plugin_settings()
         c = self.colors
         win = tk.Toplevel(self.root)
@@ -2573,7 +2120,7 @@ class App(object):
 
         act = tk.Frame(body, bg=c['bg'], padx=self.px(14), pady=self.px(8))
         act.pack(fill='x')
-        install = tk.Label(act, text='安装皮肤（.wbskin）…', bg=c['bg'],
+        install = tk.Label(act, text='安装皮肤（.wbskin / .zip）…', bg=c['bg'],
                            fg=c['t2'], font=self.f_small, cursor='hand2')
         install.pack(side='left')
         for ev, col in (('<Enter>', c['fg']), ('<Leave>', c['t2'])):
@@ -2697,7 +2244,10 @@ class App(object):
         while True:
             path = filedialog.askopenfilename(
                 title='选择皮肤文件', parent=self.parent(),
-                filetypes=[('皮肤包', '*.wbskin'), ('所有文件', '*.*')])
+                # v2.15.0：.wbskin 本身就是 zip，包里多出来的这个后缀只是
+                # 品牌；作者直接用 .zip 分发很自然，别逼他改名或切「所有文件」。
+                filetypes=[('皮肤包', '*.wbskin *.zip'),
+                           ('所有文件', '*.*')])
             if not path:
                 return
             try:
@@ -2788,28 +2338,145 @@ class App(object):
 
     # ---- 行为 ----
     def parent(self):
-        # 菜单是无标题栏浮层，动作项点击后会先收起；弹框一律挂主窗口
+        # 弹框一律挂主窗口：浮层是无标题栏 Toplevel，挂它一旦关闭弹框会跟着没
         return self.root
 
-    def refresh_status(self):
-        if not (self.status_label and self.status_label.winfo_exists()):
-            return
-        if self.readonly:
-            try:
-                self.status_label.configure(text='需要管理员权限')
-            except Exception:
-                pass
-            return
-        try:
-            self.status_label.configure(text=short_guard_state(self.probe))
-        except Exception:
-            pass
-
     def refresh(self):
-        self.refresh_status()
+        # 一次心跳只开一次管道（400 ms 预算）：设置页三行、启停按钮、托盘
+        # 监控全部吃同一份快照，各连一次会肉眼看得出迟钝。
+        snap = guard_snapshot(self.probe)
+        self._sync_set_guard(snap)
         self._tray_watch()
         if not self.probe:
             self.root.after(2000, self.refresh)
+
+    # ---- 设置页上的守护启停 ----
+    def _paint_guard_action(self, snap):
+        """启停按钮换装。
+
+        没运行 → 强调色底（这页唯一"该立刻做的事"，和分段控件选中格同源）；
+        运行中 → fill 底 + t2 字（停止是次要动作，不该一直有块黑在那儿抢眼）；
+        刚点完 → 「启动中… / 停止中…」，等心跳反映过来。
+        """
+        g = getattr(self, 'set_guard', None)
+        if not g:
+            return
+        c = self.colors
+        run = bool(snap.get('running'))
+        want = self._guard_want
+        if run:
+            text = '停止中…' if want == 'down' else '停止守护'
+            bgc, fgc = c['fill'], c['t2']
+        elif want == 'up':
+            text, bgc, fgc = '启动中…', c['fill'], c['t3']
+        else:
+            text, bgc, fgc = '启动守护', c['inv'], c['invfg']
+        if self.readonly and run:
+            fgc = c['t4']              # 只读：停止不可用，别画成可点的样子
+        try:
+            g['act'].configure(
+                text=text, bg=bgc, fg=fgc,
+                cursor=('arrow' if (self.readonly and run) else 'hand2'))
+        except Exception:
+            pass
+
+    def _hover_guard_action(self, on):
+        g = getattr(self, 'set_guard', None)
+        if not g:
+            return
+        c = self.colors
+        try:
+            stopping = g['act'].cget('text').startswith('停止')
+            if self.readonly and stopping:
+                return
+            if stopping:
+                g['act'].configure(bg=(c['line'] if on else c['fill']))
+            else:
+                g['act'].configure(
+                    bg=(mix_hex(c['inv'], c['bg'], 0.15) if on else c['inv']))
+        except Exception:
+            pass
+
+    def on_guard_action(self):
+        """设置页的守护一键启停：没运行就启动，运行中就走停止（含确认）。
+
+        启动不需要二次确认（恢复动作），停止仍然要——它会暂停所有插件。
+        返回 False 表示这一步没做成（用户取消 / 写入失败）：按钮立刻回到
+        真实状态，不显示「启动中…」这种没兑现的进行态。
+        """
+        run = guard_running()
+        if run and self.readonly:
+            self.dialog('需要管理员权限',
+                        '停止守护需要在安装目录里写一个标记文件，当前权限不够。\n'
+                        '请右键程序图标，以管理员身份重新打开后再试。',
+                        [('知道了', True)])
+            return
+        if run:
+            if not self.on_stop():
+                self._guard_want = None
+                self._sync_set_guard()
+                return
+            self._guard_want = 'down'
+        else:
+            if not self.on_start():
+                self._guard_want = None
+                self._sync_set_guard()
+                return
+            self._guard_want = 'up'
+        self._guard_since = time.time()
+        self._sync_set_guard()
+        # 起/停不是瞬时的：守护要先被计划任务拉起来、写第一拍心跳，
+        # 或者收到 stop.flag 后自行退出。这几秒加密刷新，别让用户干等。
+        self.root.after(700, self._guard_poll)
+
+    def _guard_poll(self, tries=10):
+        g = getattr(self, 'set_guard', None)
+        try:
+            alive = bool(g and g['row'].winfo_exists())
+        except Exception:
+            alive = False
+        if not alive:
+            self._guard_want = None
+            return
+        snap = guard_snapshot(self.probe)
+        self._sync_set_guard(snap)
+        want = self._guard_want
+        done = (want == 'up' and snap['running']) or \
+               (want == 'down' and not snap['running'])
+        if done or want is None or tries <= 0:
+            self._guard_want = None
+            self._sync_set_guard(snap)
+            return
+        self.root.after(600, lambda: self._guard_poll(tries - 1))
+
+    def _sync_set_guard(self, snap=None):
+        """把设置页的守护三行刷成最新事实（每 2 秒一次）。
+
+        设置页是常驻内容不是弹框：点了启动，守护要一两秒才写心跳，没有这条
+        刷新，页面会永远停在「守护没在运行」，用户以为没点成功。
+        只改文字不重建控件——重建会丢焦点、跳滚动位置。
+        """
+        g = getattr(self, 'set_guard', None)
+        if not g:
+            return
+        try:
+            if not g['row'].winfo_exists():
+                return
+        except Exception:
+            return
+        # 起/停 8 秒还没变成想要的状态：不再显示「启动中…」，交回真实状态，
+        # 免得按钮一直卡在一个假的进行态（失败的原因由 on_start 自己弹框讲）。
+        if self._guard_want and time.time() - self._guard_since > 8:
+            self._guard_want = None
+        if snap is None:
+            snap = guard_snapshot(self.probe)
+        try:
+            g['val'].configure(text=snap['state'])
+            g['ev'].configure(text=snap['events'])
+            g['pl'].configure(text=snap['plugins'])
+        except Exception:
+            return
+        self._paint_guard_action(snap)
 
     def save_features(self, show_msg=False, quiet=False):
         """把各插件开关 + 主题写回 config.json。
@@ -2988,7 +2655,7 @@ class App(object):
                 self.note('设置开机自启失败：%s' % out)
                 if not self._error('未能设置开机自启',
                                    '开机自动运行没能设置成功。可以再试一次，'
-                                   '或稍后在齿轮菜单里重新勾选。',
+                                   '或稍后回到这一页重新勾选。',
                                    can_retry=True):
                     sw.set_value(self.boot_initial)
                     self.boot_var.set(self.boot_initial)
@@ -3013,27 +2680,29 @@ class App(object):
             self.dialog('已保存', msg, [('好', True)])
 
     def on_start(self):
+        """启动守护。返回是否真的发出去了（设置页的按钮要据此收「启动中…」）。"""
         while True:
             try:
                 rc, out = start_guard()
             except Exception as e:
                 rc, out = 1, repr(e)
             if rc == 0:
-                # 成功不打断（文案规范 §2.3）：hint 变「运行中」就够了
-                self.refresh_status()
-                return
+                # 成功不打断（文案规范 §2.3）：设置页那行变「运行中」就够了
+                self._sync_set_guard()
+                return True
             self.note('启动守护失败：%s' % out)
             if not self._error('未能启动',
                                '后台守护没能启动。可以重试一次，或查看日志了解原因。',
                                can_retry=True):
-                return
+                return False
 
     def on_stop(self):
+        """停守护。返回是否写了 stop.flag（用户取消返回 False）。"""
         # 影响面大（所有插件暂停），L2 二次确认，按钮用具体动词
         if not self.confirm('停止守护？',
                             '停止后所有插件都会暂停工作，直到你再次启动。要停止吗？',
                             '停止'):
-            return
+            return False
         while True:
             try:
                 with open(STOP_FILE, 'w', encoding='ascii') as f:
@@ -3044,9 +2713,9 @@ class App(object):
                                '后台守护没能停止。可以重试一次，或查看日志了解原因。',
                                can_retry=True):
                     continue
-                return
-            self.refresh_status()
-            return
+                return False
+            self._sync_set_guard()
+            return True
 
     def _open_failed(self, what, e):
         """打开文件/目录失败：人话 + 下一步，原始异常只进日志。返回是否重试。"""
@@ -3271,7 +2940,7 @@ class App(object):
         self.open_plugin_settings(entry)
 
     def open_plugin_settings(self, entry):
-        """按 manifest.settings 生成浮层。与齿轮菜单互斥，不叠两层浮层。"""
+        """按 manifest.settings 生成浮层。与皮肤面板互斥，不叠两层浮层。"""
         c = self.colors
         # 同一插件因写盘重开（选完路径要按新值重画）时保留「已摊全量」状态，
         # 否则用户点一次 rp-more、选一次路径就被打回前 3 项。
@@ -3282,7 +2951,6 @@ class App(object):
         # 否则旧窗会变成没人认领的孤儿 Toplevel，重建时也不会被回收。
         if self.plugin_win is not None and self.plugin_win.winfo_exists():
             self.close_plugin_settings()
-        self.close_settings()
         win = tk.Toplevel(self.root)
         win.wm_overrideredirect(True)
         win.configure(bg=c['line'])
@@ -3413,7 +3081,7 @@ class App(object):
         self.place_plugin_settings()
 
     def place_plugin_settings(self):
-        """右边缘贴齿轮、向下展开；下面放不开就向上，仍不行就截到屏幕内。"""
+        """右边缘贴行尾箭头、向下展开；下面放不开就向上，仍不行就截到屏幕内。"""
         win = self.plugin_win
         body = self.plugin_body
         if not (win and body and win.winfo_exists()):
@@ -3469,7 +3137,7 @@ class App(object):
             pass
 
     def _plugin_watch(self):
-        """全局左键：按在弹框 / 齿轮之外就收起（与齿轮菜单同一套判定）。"""
+        """全局左键：按在弹框之外就收起（与皮肤面板同一套判定）。"""
         win = self.plugin_win
         if not (win and win.winfo_exists()):
             return
@@ -3781,13 +3449,12 @@ class App(object):
                     [('好', True)])
 
     def reload_registry(self):
-        """装/卸之后重读注册表：主页面行数、菜单分组与开关都跟着变。
+        """装/卸之后重读注册表：主页面行数与开关都跟着变。
 
         不整体重启面板进程，只重建控件；vars 必须重建成新的 BooleanVar，
         否则旧开关被 destroy 后仍引用旧变量，拨动时写不到 config.json。
         """
         self.hide_tips()
-        self.close_settings()
         self.close_plugin_settings()
         self.entries_all = plugin_entries()
         self.runtime_state = read_plugin_states()
@@ -3835,24 +3502,20 @@ def self_check():
             e.name for e in entries
             if e.status == plugin_host.STATUS_OK and e.home))
         _skin, _appearance = skins.resolve(cfg, base=BASE)
-        _std = _skin.performance == 'standard'
-        # 入口随骨架分档：玻璃没有「设置」按钮，字标就是菜单入口；
-        # 极简右上角本来就有「设置」，字标不再绑点击（v2.12.2）。
-        lines.append('second_level=%s' % (
-            'wordmark_menu+skin_panel' if _std else 'set_button'))
+        # 入口固定：右上角「设置」→ 同窗换页（v2.17.0 起没有字标菜单那条路）。
+        lines.append('second_level=set_button')
         lines.append('skin=%s/%s perf=%s' % (
             _skin.id, _appearance, _skin.perf_label))
         _size = ui_size_from_cfg(cfg)
         lines.append('ui_size=%s zoom=%.2f' % (_size, UI_SIZE_ZOOM[_size]))
-        lines.append('menu_style=browser_popup rows=%d' % menu_row_count(entries))
         # 注册表全景：id:状态，自检时一眼能看出哪个插件没加载起来
         lines.append('plugins=%s' % (','.join(
             '%s:%s' % (e.id, e.status) for e in entries) or 'none'))
         lines.append('plugins_dir=%s exists=%s' % (
             PLUGINS_DIR, os.path.isdir(PLUGINS_DIR)))
         lines.append('plugins_state=%s' % os.path.isfile(STATE_FILE))
-        lines.append('menu_entry=%s' % ('label:WBOX' if _std else 'label:设置'))
-        lines.append('plugin_actions=add:plus,settings:cfg,remove:in_popup edit=%s'
+        lines.append('menu_entry=label:设置')
+        lines.append('plugin_actions=add:plus,row:chev_r,inline_open edit=%s'
                      % plugin_package.plugins_writable(PLUGINS_DIR))
         lines.append('plugin_package=%s' % plugin_package.FORMAT_ID)
         lines.append('icons=%s' % ','.join(
@@ -3909,37 +3572,34 @@ def layout_check():
                     pass
             return w, h, bad
 
-        lx, ly, sw_area, sh_area = work_area()
-
         def scan(size):
             # v2.12.0：窗口大小三档都要量。persist=False：自检不改用户配置。
             app.set_ui_size(size, persist=False)
             for dpi in (96, 120, 144, 168, 192, 240):
-                app.close_settings()
                 app.apply_dpi(dpi)
                 root.update_idletasks()
                 root.update()
+                # 列表页 + 设置页各量一次：两页共用同一个窗口，谁溢出都要报出来。
+                # v2.18.0 删掉齿轮浮层菜单后，这里原来那套「菜单在屏内 / 逐行不越界」
+                # 的量测随之退役——第二级已经不是一个浮层，而是同一扇窗的另一页。
                 w, h, bad = overflow(root)
-                # 弹出菜单按内部 Frame 检查逐行项目是否越界，并确认浮层
-                # 完整落在屏幕工作区（超高时由 Canvas 滚轮承接，不裁内容）。
-                app.open_settings()
+                app.toggle_pane()
                 root.update_idletasks()
                 root.update()
-                iw, ih, ibad = overflow(app.settings_inner)
-                m = app.settings_win
-                mx, my = m.winfo_rootx(), m.winfo_rooty()
-                mw, mh = m.winfo_width(), m.winfo_height()
-                in_area = (mx >= lx - 2 and my >= ly - 2 and
-                           mx + mw <= lx + sw_area + 2 and
-                           my + mh <= ly + sh_area + 2)
+                # 设置页量它的页内容器（Canvas 的 wrap Frame）：窗口本身不裁
+                # 设置页内容，滚轮视口才承接超高；拿 root 量会把视口内正常
+                # 滚动的内容误报成溢出。
+                sw_, sh_, sbad = overflow(app.set_inner)
+                app.toggle_pane()
+                root.update_idletasks()
+                root.update()
                 lines.append(
                     'size=%s dpi=%-3d scale=%.2f win=%dx%d overflow=%d '
-                    'menu=%dx%d items=%dx%d moverflow=%d in_area=%s '
-                    'font_px=%-3d plugins=%d %s'
+                    'set=%dx%d soverflow=%d font_px=%-3d plugins=%d %s'
                     % (size, dpi, dpi / 96.0 * app.ui_zoom, w, h, len(bad),
-                       mw, mh, iw, ih, len(ibad), in_area,
+                       sw_, sh_, len(sbad),
                        app.f_body.metrics('linespace'), len(app.entries),
-                       ';'.join((bad + ibad)[:3])))
+                       ';'.join((bad + sbad)[:3])))
                 for e in app.entries:
                     if e.status != plugin_host.STATUS_OK or not e.settings:
                         continue
@@ -3958,24 +3618,23 @@ def layout_check():
         lines.append('pass skin=%s' % app.skin.id)
         for _size in tuple(k for k, _l, _z in UI_SIZES):
             scan(_size)
-        # v2.10.0 内置只有极简档；standard 骨架（第三方皮肤仍走）也要量：
-        # 换一枚临时 standard 皮肤再扫一遍，persist=False 不写生产配置。
-        if app.skin.performance != 'standard':
-            tok = dict.fromkeys(skins.TOKENS, '#808080')
-            tok.update(fg='#000000', glass='#FFFFFF', on='#000000',
-                       on_knob='#FFFFFF', knob='#FFFFFF')
-            std = skins.from_dict({
-                'id': 'layout-std', 'name': '自检标准档', 'version': '1.0.0',
-                'api': 1, 'engine': 'flat', 'performance': 'standard',
-                'chrome': 'custom',
-                'metrics': {'row': 52, 'font': 15, 'icon': 22, 'titlebar': 48},
-                'radius': {'window': 26, 'card': 20, 'row': 14},
-                'light': tok})
-            app.apply_skin(std, persist=False)
-            lines.append('pass skin=layout-std')
-            for _size in tuple(k for k, _l, _z in UI_SIZES):
-                scan(_size)
-        app.close_settings()
+        # v2.17.0：骨架只留默认一套。第三方包若仍声明 performance=standard，
+        # 也按默认骨架渲染（旧字段只作兼容，不再换骨架）。这里换一枚这种包
+        # 再扫一遍，确认降级不会报错、也不会把窗口撑破（persist=False）。
+        tok = dict.fromkeys(skins.TOKENS, '#808080')
+        tok.update(fg='#000000', glass='#FFFFFF', on='#000000',
+                   on_knob='#FFFFFF', knob='#FFFFFF')
+        legacy = skins.from_dict({
+            'id': 'layout-legacy', 'name': '自检老包', 'version': '1.0.0',
+            'api': 1, 'engine': 'flat', 'performance': 'standard',
+            'chrome': 'custom',
+            'metrics': {'row': 44, 'font': 14, 'icon': 18, 'titlebar': 40},
+            'radius': {'window': 26, 'card': 20, 'row': 14},
+            'light': tok})
+        app.apply_skin(legacy, persist=False)
+        lines.append('pass skin=layout-legacy(standard→默认骨架)')
+        for _size in tuple(k for k, _l, _z in UI_SIZES):
+            scan(_size)
         root.destroy()
     except Exception as e:
         lines[0] = 'FAIL'

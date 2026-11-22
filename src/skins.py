@@ -6,13 +6,14 @@
 1. **皮肤是纯数据**，不含任何可执行代码。这里只读 json，不做 eval/import。
 2. **tkinter 不认带 alpha 的颜色**（`#RRGGBBAA` 会 TclError）。所以落地前必须
    把 8 位色按 alpha 合成到「舞台色」上，换成不透明 `#RRGGBB`。合成顺序固定：
-   `glass` 先叠到舞台 → 其余 token 再叠到 glass 的结果。玻璃档因此是
-   「预合成的磨砂色」，不是真透视——Tk 没有逐像素透明，这是硬限制，别在
+   `glass` 先叠到舞台 → 其余 token 再叠到 glass 的结果。因此带 alpha 的皮肤是
+   「预合成的半透明色」，不是真透视——Tk 没有逐像素透明，这是硬限制，别在
    代码里假装能做到。
 3. **内置皮肤写死在代码里**，不读外部文件：内置皮肤随 exe 走版本，不需要
    经过包校验；用户皮肤才是外部数据，走 `skin_package.py` 的校验。
-   v2.10.0 起内置只发极简一档（产品决定：先打磨极简）；standard 引擎保留，
-   第三方皮肤仍可声明 standard 走圆角 / 浮层 / 动效骨架。
+   v2.17.0 起**只有一套骨架**（内置「默认」那套：方角直排 + 行内展开 + 同窗
+   换页）。皮肤只能改颜色与少量尺寸，改不了骨架——`engine` / `performance`
+   退化为元数据，写 `standard` 的第三方老包照常加载，按默认骨架渲染。
 
 token 一共 26 个（不是 25——规范初稿数漏了 `glass_edge`，这里以实际为准）。
 """
@@ -21,6 +22,9 @@ import os
 import re
 
 # 26 个颜色 token，名字与语义固定，皮肤只能改值。缺任意一个 → 拒绝加载。
+# 注：`glass*` 四个是「窗口底 / 顶部高光 / 内描边 / 外描边」的占位名，
+# 名字沿用 v2.10.0 之前的玻璃档，语义按现在这套骨架就是窗口底色与描边，
+# 不表示磨砂。改 token 名会让所有已分发的第三方皮肤包同时失效，故不改。
 TOKENS = (
     'fg', 't2', 't3', 't4',
     'hair', 'hair_strong',
@@ -36,8 +40,9 @@ TOKENS = (
 # 落地时忽略的 token（只给设计稿用）。
 DESIGN_ONLY = ('amb0', 'amb1', 'amb2', 'amb3')
 
-# 合成舞台：桌面平均色。玻璃档的半透明色都叠在它上面变成不透明色。
+# 合成舞台：桌面平均色。带 alpha 的 token 都叠在它上面变成不透明色。
 # 换一个桌面壁纸，实际观感会偏一点点，这是「预合成」路线的固有代价。
+# 内置「默认」全是纯色，走不到这条路径（alpha=1 直接返回）。
 STAGE = {'light': '#EDEDF1', 'dark': '#101014'}
 
 API_VERSION = 1
@@ -47,6 +52,9 @@ PLUGIN_IDS = frozenset(('ace', 'afterburner', 'gamepp', 'popup', 'desktop_hud'))
 
 METRIC_KEYS = ('row', 'font', 'icon', 'titlebar')
 RADIUS_KEYS = ('window', 'card', 'row')
+# engine / performance 是 v2.17.0 之前的骨架开关，现在只作兼容字段：
+# 取值照旧校验（老包不报错），但渲染恒走默认骨架（settings_gui 不再读它们）。
+# 真正影响外观的只剩 metrics（行高/字号/图标/标题栏）与 radius（恒 0）。
 ENGINES = ('flat', 'bitmap')
 PERF = ('minimal', 'standard')
 CHROME = ('system', 'custom')
@@ -55,7 +63,7 @@ CHROME = ('system', 'custom')
 # 值直接抄自 design/wbox-skins.html 的 CSS 变量，两边对不上就是设计稿被改过
 # 而代码没跟，改的时候一起改。
 # v2.10.0：液态玻璃不再内置（用户决策：先去掉玻璃、打磨极简）。_GLASS_* 令牌
-# 随之删除；standard 档的渲染骨架仍在 settings_gui，第三方皮肤可声明使用。
+# 随之删除。v2.17.0 起骨架只留默认一套，third-party 声明 standard 也按它渲染。
 _PLAIN_LIGHT = {
     'fg': '#000000', 't2': '#595959', 't3': '#767676', 't4': '#A3A3A3',
     'hair': '#E6E6E6', 'hair_strong': '#CFCFCF',
@@ -85,7 +93,10 @@ _PLAIN_DARK = {
 
 BUILTIN = (
     {
-        'id': 'plain', 'name': '极简', 'version': '1.1.0', 'api': 1,
+        # v2.15.0 显示名「极简」→「默认」：它本来就是出厂那一档，叫"极简"
+        # 等于把一种风格说成了唯一风格，用户装了第三方皮肤后反而找不到"原来的"。
+        # id 保持 plain——老配置里的 ui_skin=plain 继续命中，不做别名迁移。
+        'id': 'plain', 'name': '默认', 'version': '1.2.0', 'api': 1,
         'engine': 'flat', 'performance': 'minimal', 'chrome': 'custom',
         'author': 'WBOX', 'description': '方角纯色，零位图零动画',
         # v2.10.0 打磨：行高 44→40、标题栏 40→36，窗口基准宽 640→480
@@ -198,7 +209,13 @@ class Skin(object):
 
     @property
     def perf_label(self):
-        return '最省' if self.performance == 'minimal' else '标准'
+        """皮肤卡片上的成本标签。
+
+        v2.17.0 起所有皮肤共用默认骨架（零位图、零动画），成本相同，
+        所以标签统一说骨架名字，不再分「最省 / 标准」——那个区分随
+        玻璃骨架一起退役了，留着会让人以为装了 standard 皮肤会更贵。
+        """
+        return '默认骨架'
 
     def metric(self, key, scale=1.0, dpi_scale=None):
         """把 skin.json 里的逻辑 px 换算成当前 DPI 的设备像素。"""
@@ -273,7 +290,8 @@ def validate(data, origin='skin.json', expect_id=None):
         for tok in TOKENS:
             _parse(block[tok])              # 格式不对直接抛
 
-    # performance 档位与声明必须自洽：minimal 不许有位图，行高也不许超过 44
+    # performance 档位与声明必须自洽：minimal 不许有位图，行高也不许超过 44。
+    # 这条与渲染无关，是防止「声明最省却塞了位图/大行高」的老包混进来。
     if data['performance'] == 'minimal':
         if data.get('assets'):
             raise SkinError('performance=minimal 的皮肤不许带 assets')

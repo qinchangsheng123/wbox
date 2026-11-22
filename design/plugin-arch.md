@@ -3,6 +3,13 @@
 > 目标：把「小飞机关联启动 / ACE 防护 / 弹窗关闭」三个内置功能变成可插拔插件，用户把插件目录丢进 `plugins\` 就能加新功能。
 > 约束：Python 3.8 + 仅标准库、PyInstaller onedir、旧 `config.json` 原样可用、ACE 四道闸门语义不变、单插件故障不影响守护、`plugins\` 为空也能跑。
 > 本文只做设计，不含实现代码。实现由工程师按第 10 节顺序推进。
+>
+> **当前态注记（2026-11-22，WBOX v2.18.0）**：这是 v2.0.0 的历史设计稿，
+> 大部分章节保留原貌。其中 `gui_menu_rows()` 契约与「浏览器式齿轮菜单」
+> 已于 v2.18.0 删除（自 v2.10.0 起生产不可达）；设置入口统一是右上角
+> 「设置」同窗换页，插件状态只由行尾状态点表达。第 10 节 S6 列的
+> `test_gear_menu.py` / `test_plugin_gui_overflow.py` 同样已退役，
+> 由 `test_menu_retired.py` 守卫。
 
 ---
 
@@ -83,7 +90,7 @@
 | 小飞机启动/关闭/RTSS 清理/所有权 `ab_pid` | 插件 afterburner | 只与该功能相关 |
 | ACE 四道闸门排队、限速状态集合 | 插件 ace | 只与该功能相关（闸门实现在 `ace_native`，仍在内核侧冻结） |
 | 弹窗 arm / watch_early / sweep | 插件 popup | 只与该功能相关 |
-| GUI 主页行、菜单项、开关写回 | 内核渲染 + 插件提供数据 | 面板不认识任何具体功能 |
+| GUI 主页行、设置页行、开关写回 | 内核渲染 + 插件提供数据 | 面板不认识任何具体功能 |
 
 ---
 
@@ -94,14 +101,14 @@
 | 字段 | 类型 | 必填 | 缺省 | 缺省/异常行为 |
 |---|---|---|---|---|
 | `id` | string | 是 | — | 必须匹配 `^[a-z][a-z0-9_]{1,31}$`；缺失或非法 → 该目录跳过，状态 `bad_manifest`，其余插件照常加载 |
-| `name` | string | 是 | — | 中文显示名（主页行、菜单行、日志）。缺失 → 用 `id` 兜底并记一条警告 |
+| `name` | string | 是 | — | 中文显示名（主页行、自检行、日志）。缺失 → 用 `id` 兜底并记一条警告 |
 | `version` | string | 是 | — | `x.y.z`，仅展示与日志，不参与兼容判断 |
 | `api` | int | 是 | — | 依赖的插件 API 主版本。见第 4 节 |
 | `entry` | string | 否 | `plugin.py:Plugin` | `文件名:类名`。文件不存在 / 类不存在 → `load_failed` |
 | `icon` | string | 否 | `dot` | 必须命中图标白名单（`Glyph.draw` 现有分支，见 `settings_gui.py:579-670`）：`link/shield/block/dot/play/stop/boot/rescan/log/cfg/sun/moon/check/close`。未知值 → `dot`（`Glyph` 无 else 分支，画不出来就是空白，必须兜底） |
 | `tip` | string | 否 | `''` | 主页悬停简介，允许 `\n`。空则不挂 ToolTip |
-| `order` | int | 否 | `100` | 主页与菜单排序，小在前；同值按 `id` 字典序，保证顺序确定 |
-| `home` | bool | 否 | `true` | 是否在主页出现「名称 + 开关」行。`false` 的插件只出现在齿轮菜单「插件」分组 |
+| `order` | int | 否 | `100` | 主页排序，小在前；同值按 `id` 字典序，保证顺序确定 |
+| `home` | bool | 否 | `true` | 是否在主页出现「名称 + 开关」行。`false` 的插件不占主页，仍留在注册表里由自检列出 |
 | `admin` | bool | 否 | `false` | 仅用于面板文案（该类插件需要管理员权限才生效），守护进程恒为管理员 |
 | `toggle` | string[] | 否 | `["<id>_enabled"]` | 开关的配置路径（点号分隔，如 `["ace_cleanup.enabled","ace_throttle.enabled"]`）。读 = 全部为真才算开；写 = 全部写成同一个值。空数组 = 该插件无开关，强制 `home=false` |
 | `config.defaults` | object | 否 | `{}` | 仅在插件类**没有** `DEFAULT_CONFIG` 时作为兜底。**权威来源是 `plugin.py` 的 `DEFAULT_CONFIG`**，原因见第 4.3 节 |
@@ -272,7 +279,7 @@ class WingmanPlugin(object):
     # ---- 面板（在**面板进程**内调用，不在守护进程）----
     def gui_state(self, cfg): ...        # -> bool，开关初始状态（默认实现：按 manifest.toggle 全真为真）
     def gui_toggle(self, cfg, on): ...   # 把开关写进 cfg（内存），内核负责 save_cfg；默认实现按 toggle 路径写
-    def gui_menu_rows(self, cfg): ...    # -> [{'text','icon','hint','action'}]，可选，插入菜单「插件」分组
+    # v2.18.0 删除：gui_menu_rows(cfg) 曾插入齿轮菜单「插件」分组，契约已退役
 
     # ---- 自检 ----
     def on_self_test(self, out): ...
@@ -368,7 +375,6 @@ classDiagram
         +on_exit(reason) void
         +gui_state(cfg) bool
         +gui_toggle(cfg, on) void
-        +gui_menu_rows(cfg) list
         +on_self_test(out) void
     }
     class PluginContext {
@@ -880,7 +886,7 @@ for %%P in (afterburner ace popup) do (
 | **S3** | 搬 afterburner 插件（最容易出问题的一步：`ab_pid` 所有权 + `retry_close`） | `plugins\afterburner\plugin.py|json`；内核补 `ctx.retry_close()` | S2 | `test_plugin_hooks.py` + `test_plugin_retry_close.py`；真机：开一局游戏看小飞机拉起/退出关闭，日志与 v1.3.1 逐行对比 |
 | **S4** | 搬 ace 插件（清理 + 限速） | `plugins\ace\plugin.py|json`；`ace_native.py` 不动 | S3 | `test_plugin_retry_close.py` 之外的闸门回归：`test_ace_state.py`、`test_quiet_gate.py`、`test_throttle_state.py` 全绿；真机看「ACE 判定」「ACE 限速」「已还原」三类日志齐全 |
 | **S5** | 搬 popup 插件 + 内核 `tick()` 重写为会话状态机 + 钩子分发 | `plugins\popup\plugin.py|json`；`guard_core.py` 瘦身（`tick/run/cleanup/self_test`） | S4 | `test_early_count.py`、`test_popup_kill.py`、`test_plugin_hooks.py`；`--self-test` 输出含插件表；**`test_plugin_empty.py` 必须绿**（零插件可跑） |
-| **S6** | 面板改造（注册表驱动主页 + 动态菜单 + 插件分组 + 状态文件读取） | `settings_gui.py` | S5 | `test_gear_menu.py`（改断言）、`test_plugin_gui.py`、`test_plugin_gui_overflow.py`；`--self-check` / `--layout-check` |
+| **S6** | 面板改造（注册表驱动主页 + 同窗换页设置页 + 状态文件读取） | `settings_gui.py` | S5 | 历史：`test_gear_menu.py` / `test_plugin_gui_overflow.py` 已随菜单退役；现由 `test_menu_retired.py` / `test_plugin_gui.py` 守卫；`--self-check` / `--layout-check` |
 | **S7** | 打包与安装链路 | `src\abg.spec`（hiddenimports）、`build_exe.bat`、`installer\setup_abg.py`（卸载备份）、`installer\build_setup.py`（SKIP_NAMES） | S6 | `build_exe.bat` → `app\plugins\` 存在且含 3 个插件；`--self-test`/`--self-check`/`--layout-check` 三个 txt 全 OK；`installer\build_setup.py` 打包含 `plugins\` |
 | **S8** | 真机端到端回归 + 文档 | `README.md`、`installer\README-部署.md`、`config.json` 的 `_插件` 说明键 | S7 | ①升级安装：旧 `config.json` 30 键值不变、三开关状态不变；②删掉 `plugins\ace` → 面板不显示该行、守护照跑；③丢一个只有 `plugin.json`+`plugin.py` 的假插件 → 主页多一行、开关能写回；④故意写坏一个插件 → 守护不崩、面板显示「加载失败」；⑤卸载 → 用户插件被备份到 `%LOCALAPPDATA%\Wingman\removed-plugins-*` |
 
@@ -901,7 +907,7 @@ for %%P in (afterburner ace popup) do (
 
 1. **插件是否需要后台线程**：本设计假设所有插件逻辑同步跑在 `tick` 内（v1 也是单线程）。若将来有插件需要长轮询（如网络守护，但本产品禁网），再引入线程需要额外的异常边界设计。
 2. **插件是否支持图片图标**：v2 只支持 `Glyph` 自绘线性图标白名单（保持"无彩色、纯灰阶、无 emoji"的界面约定）。要支持 `.png` 需改 `Glyph`，属界面风格变更，不在本次范围。
-3. **插件级设置弹窗**：v2 只支持「菜单信息行 + 编辑 config.json」，没有每个插件独立的设置窗口。若用户插件需要，可后续用 `gui_menu_rows` 扩成 `gui_open_settings(parent)`。
-4. **插件是否需要独立版本号展示**：v2 只在「插件」分组 hint 里显示 `version`，不做更新检查（无网络）。
+3. **插件级设置弹窗**（已落地，非待确认）：每个功能行都能行内展开可调项；`gui_menu_rows` 已在 v2.18.0 删除，不需要用它扩设置入口。
+4. **插件是否需要独立版本号展示**（已落地，非待确认）：`version` 在行内展开块与自检里显示，不做更新检查（无网络）。
 5. **是否允许用户插件复用 `ace_native/popup_guard/game_lib`**：允许（`ctx.import_core`）。理由：这三个是纯 Win32/文件系统工具函数，复用不会绕过闸门（闸门判定在 `AceCleaner.verdict()` 里，插件复用的正是同一份实现）。
 6. **manifest 无签名校验**：v2 不做（引入 RSA 校验需第三方库或手写大数运算，违反"仅标准库"约束）。用「目录 ACL 仅管理员可写」这一系统级手段代替。

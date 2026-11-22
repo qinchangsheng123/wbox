@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
-"""standard 档皮肤 fixture（v2.10.0 起液态玻璃不再内置）。
+"""第三方「老包」fixture：声明 `performance=standard` 的皮肤长什么样。
 
-需要玻璃档语义（齿轮行尾 / 浮层 / tween 链）的测试往自己的临时 base 写一份
-用户皮肤 `skins/liquid-glass/skin.json`：字段与旧内置档同口径（standard /
-flat / custom、52/15/22/48、圆角 26/20/14），颜色借用内置极简的 token 值
-（测试断言的是行为与几何，不是玻璃配色）。只写临时目录，不碰生产配置。
+v2.17.0 起骨架只剩默认一套，`standard` 不再换骨架（不换卡片、不换浮层、不开
+动效）。这份 fixture 现在的作用是验证「老包照常加载、按默认骨架渲染、不报错」；
+它同时保留了历史 id `liquid-glass`，供 test_plain_ui 验证老配置回退与日志留痕。
+
+字段沿用旧内置档口径（standard / flat / custom、52/15/22/48、圆角 26/20/14），
+颜色借内置默认的 token——断言的是行为与几何，不是配色。
+只写临时目录，不碰生产配置。
 """
 import json
 import os

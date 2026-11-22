@@ -192,3 +192,72 @@ def remove_skin(skin_id, base):
     if not os.path.isdir(dest):
         raise SkinPackageError('没有找到皮肤 %s' % skin_id)
     shutil.rmtree(dest)
+
+
+def pack(src_dir, out_path, log=None):
+    """把皮肤目录打成 `.wbskin`，打完立刻 inspect() 自检一遍（v2.15.0）。
+
+    之前只有 inspect/install 没有 pack，第三方作者得自己压 zip——而 zip 的坑
+    恰好全在细节里：根目录多套一层、skin.json 不在第一位、Windows 反斜杠、
+    BOM、目录名和 id 不一致。这里把这些一次做对，打完直接跑校验，
+    不合格当场抛，不留一个"看起来像皮肤"的坏包。
+
+    返回 inspect() 的结果（id / name / version / members / total_bytes）。
+    """
+    src_dir = os.path.abspath(src_dir)
+    manifest = os.path.join(src_dir, MANIFEST)
+    if not os.path.isfile(manifest):
+        raise SkinPackageError('源目录里没有 skin.json：%s' % src_dir,
+                               reason='manifest')
+    with open(manifest, 'rb') as f:
+        try:
+            raw = json.loads(f.read().decode('utf-8-sig'))
+        except (ValueError, UnicodeDecodeError) as e:
+            raise SkinPackageError('skin.json 不是有效 UTF-8 JSON：%r' % (e,),
+                                   reason='manifest')
+    skin_id = raw.get('id') if isinstance(raw, dict) else None
+    if not isinstance(skin_id, str) or not skin_id:
+        raise SkinPackageError('skin.json 缺少 id', reason='manifest')
+    # 目录名 = id：装完的落点是 skins\<id>\，不一致时 set_skin(id) 找不到目录，
+    # 卡片能列出、点下去没反应——这类问题排查成本远高于打包时报错。
+    if os.path.basename(src_dir) != skin_id:
+        raise SkinPackageError(
+            '目录名必须是 id（%s），当前是 %s' % (skin_id,
+                                              os.path.basename(src_dir)),
+            reason='manifest')
+    try:
+        skins.load_dir(src_dir)
+    except skins.SkinError as e:
+        raise SkinPackageError(str(e), reason='manifest')
+
+    # 固定顺序：skin.json 打头（人肉解包、外部工具都先看它），
+    # 其后 preview.png / README.md / assets 按名字排——同内容出同字节序，
+    # 便于 diff 与"这一版到底改了什么"。
+    names = [MANIFEST]
+    for name in ('preview.png', 'README.md'):
+        if os.path.isfile(os.path.join(src_dir, name)):
+            names.append(name)
+    assets_dir = os.path.join(src_dir, 'assets')
+    if os.path.isdir(assets_dir):
+        for fn in sorted(os.listdir(assets_dir)):
+            if os.path.isfile(os.path.join(assets_dir, fn)):
+                names.append('assets/' + fn)
+
+    out_path = os.path.abspath(out_path)
+    out_dir = os.path.dirname(out_path)
+    if out_dir and not os.path.isdir(out_dir):
+        os.makedirs(out_dir)
+    tmp = out_path + '.tmp'
+    try:
+        with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for rel in names:
+                zf.write(os.path.join(src_dir, rel.replace('/', os.sep)), rel)
+        os.replace(tmp, out_path)
+    except Exception:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    if log:
+        log('skin.pack id=%s version=%s bytes=%d'
+            % (skin_id, raw.get('version'), os.path.getsize(out_path)))
+    return inspect(out_path)

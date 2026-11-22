@@ -54,8 +54,24 @@ if not exist "%OUTDIR%\WBOX.exe" goto :fail
 rem The build never produces config.json: generate the factory template (kernel
 rem defaults + builtin plugin defaults). Never copy app\config.json here: that is
 rem the live production config and would ship user machine paths in every payload.
+rem
+rem v2.15.0: the default OUTDIR *is* the production app\, so the line below used
+rem to wipe the user's own settings (afterburner_path, desktop HUD, tray start,
+rem plugin switches) on every rebuild. Park the live config first, regenerate the
+rem factory template, then merge the user values back in. payload.zip is NOT
+rem affected: build_setup.py rewrites config.json from factory_config.factory_bytes()
+rem no matter what sits in OUTDIR.
+rem   (no else-branch: a first-ever build has no live config to park)
+rem
+rem Batch parses an if-block as one command, so the %ERRORLEVEL% test inside it is
+rem the *pre-block* value; use goto instead of phrasing the failure check inline.
+if exist "%OUTDIR%\config.json" copy /Y "%OUTDIR%\config.json" "%OUTDIR%\config.json.live" >nul 2>&1
 "%PY%" "%ROOT%installer\factory_config.py" --out "%OUTDIR%\config.json"
 if errorlevel 1 goto :fail
+if not exist "%OUTDIR%\config.json.live" goto :skiplive
+"%PY%" "%ROOT%installer\merge_live_config.py" --dir "%OUTDIR%"
+if errorlevel 1 goto :fail
+:skiplive
 rem v2.3.0: compile docs\PLUGIN-SPEC.md into a single self-contained HTML and lay
 rem the guide (HTML + Markdown + plugin template) into %OUTDIR%\docs\, so
 rem build_setup.py picks it up for payload.zip. Kept as one python call because

@@ -1,15 +1,32 @@
-# WBOX 皮肤制作规范 v1.0.0
+# WBOX 皮肤制作规范 v1.2.0
 
 > 适用范围：WBOX（原「僚机 Wingman」）设置面板的外观层。
-> 版本：v1.0.0，2026-11-17 定稿；v2.7.0–v2.10.0 已落地（实况见第 8 节）。
-> 关联设计稿：`design/wbox-skins.html`（皮肤管理 / 液态玻璃 / 极简 / 成本对照 / 规范五视图）
+> 版本：v1.2.0，2026-11-22；v1.0.0 于 2026-11-17 定稿，v2.7.0–v2.10.0 的落地实况见第 8 节。
+> v1.1.0 变更：新增第 9 节「派生一套配色主题」（以默认皮肤为底、只换 token 的正式做法，
+> 范例 `design/themes/kuan-green/`）；内置皮肤显示名「极简」→「默认」（id 仍是 `plain`）；
+> 补 `skin_package.pack()` 打包命令；token `on` / `on_knob` 增加"选中态"用途。
+> **v1.2.0 变更（骨架合并）**：`standard` 渲染骨架（圆角卡片 / 浮层设置 / tween 动效 /
+> 字标菜单）随液态玻璃一起退役，面板只剩默认那套骨架。`engine` / `performance` /
+> `radius` 降为元数据：写 `standard` 的老包照常加载、按默认骨架渲染；皮肤卡片上的
+> 成本标签统一显示「默认骨架」。3.3 的样例换成最小可用样例，不再以液态玻璃为参照。
+> WBOX v2.18.0 又删掉了齿轮浮层菜单，现在真正会建的浮层只剩皮肤面板与插件
+> 设置框两个；`menu_base` token 名保留（改名会让所有已分发皮肤包失效），
+> 语义已收敛为这两个浮层的底色。
+>
+> **术语**：文中「默认骨架」= 方角直排 + 行内展开 + 同窗换页 + 零动画，是唯一的骨架。
+> `performance=minimal` 仍出现在 `skin.json` 里，但现在只表示「不带位图」。
+> 官方皮肤仓库：<https://github.com/qinchangsheng123/wbox-skins>（成品 `.wbskin`、
+> `templates/plain-base/` 默认底模板、独立打包工具 `tools/pack.py`）；做皮肤从模板复制，
+> 不要从零写 `skin.json`。
+> 关联设计稿：`design/wbox-skins.html`（皮肤管理 / 默认 / 成本对照 / 规范四视图；
+> 其中「液态玻璃」视图是 v2.10.0 之前的历史留档，不代表当前产品）
 
 ---
 
 ## 0. 一句话
 
-**皮肤是纯数据的 zip 包**，只改颜色、圆角、字号、行高和可选的位图，不含任何可执行代码；
-面板加载它只换外观，不动任何一行逻辑。
+**皮肤是纯数据的 zip 包**，只改颜色、字号、行高和几项尺寸，不含任何可执行代码；
+面板加载它只换外观，骨架、交互、布局一步不动。
 
 ---
 
@@ -19,8 +36,8 @@
 |---|---|---|
 | 形态 | `plugins/<id>/plugin.py` | `plugins/skins/<id>/skin.json` |
 | 运行位置 | 守护进程内，完整 Python 权限 | 面板进程内，只被解析不执行 |
-| 能力 | 提权、读进程、改注册表、读写配置 | 改颜色与尺寸，加载 PNG |
-| 失败影响 | 可能拖垮守护 | 最多面板变丑，回退内置极简 |
+| 能力 | 提权、读进程、改注册表、读写配置 | 改颜色与尺寸（不含位图） |
+| 失败影响 | 可能拖垮守护 | 最多面板变丑，回退内置「默认」 |
 
 因此皮肤走**独立目录 + 独立校验**：`plugins/skins/` 与 `plugins/` 平级，
 功能插件的扫描逻辑不扫这个目录，皮肤的校验不看 `plugin.json`。
@@ -33,15 +50,14 @@
 ## 2. 包结构
 
 ```
-liquid-glass.wbskin          # 其实就是 zip，后缀换成 .wbskin
+my-theme.wbskin              # 其实就是 zip，后缀换成 .wbskin
 ├─ skin.json                 # 必需，唯一入口
-├─ preview.png               # 必需，256 × 144，卡片缩略图
-├─ README.md                 # 可选，作者与说明
-└─ assets/                   # 可选，只允许 png
-   ├─ backdrop.png
-   ├─ mask.png
-   └─ shadow.png
+├─ preview.png               # 必需，256 × 144，卡片缩略图（16:9）
+└─ README.md                 # 可选，作者与说明（也建议写配色表与对比度）
 ```
+
+- 默认骨架不读位图，所以没有 `assets/` 这一层了。带 `assets` 的包会被
+  「`performance=minimal` 不许有位图」这条校验拒掉（v1.2.0）。
 
 - zip 根目录直接是 `skin.json`，不允许再套一层文件夹。
 - 编码统一 UTF-8 无 BOM；`skin.json` 用 2 空格缩进（不强制，但发布版请格式化）。
@@ -59,8 +75,8 @@ liquid-glass.wbskin          # 其实就是 zip，后缀换成 .wbskin
 | `name` | string | 显示名，≤ 12 个汉字 |
 | `version` | string | 三段式 `X.Y.Z` |
 | `api` | int | 皮肤 API 版本，当前 `1` |
-| `engine` | string | `bitmap`（有位图）或 `flat`（纯色） |
-| `performance` | string | `minimal` 或 `standard`，见第 5 节 |
+| `engine` | string | 历史字段：`flat` 或 `bitmap`；v1.2.0 起不参与渲染，新皮肤写 `flat` |
+| `performance` | string | 历史字段：`minimal` 或 `standard`；v1.2.0 起只作「有没有位图」的成本声明，见第 5 节 |
 | `chrome` | string | `custom`（自绘标题栏）或 `system`（系统标题栏） |
 | `metrics` | object | `row` / `font` / `icon` / `titlebar` 四个整数，单位 px |
 | `radius` | object | `window` / `card` / `row` 三个整数 |
@@ -73,55 +89,57 @@ liquid-glass.wbskin          # 其实就是 zip，后缀换成 .wbskin
 | `author` | string | 作者 |
 | `homepage` | string | 只做展示，面板不会去访问 |
 | `dark` | object | 暗色 token；缺省时复用 `light` |
-| `assets` | object | `backdrop` / `mask` / `shadow` 三个键，值为包内相对路径 |
+| `assets` | object | **已停用**：默认骨架不读位图，带了会被校验拒掉（保留字段只为老包能报出准确错误） |
 | `description` | string | 一句话，显示在卡片副标题 |
 
-### 3.3 完整样例（液态玻璃，第三方皮肤参照）
+### 3.3 完整样例（最小可用）
 
-v2.10.0 起液态玻璃**不再内置**（产品决定：先打磨极简），本样例保留作第三方
-`standard` 档皮肤的字段参照；standard 渲染骨架仍在面板里，装包校验通过后即可用。
+下面这份能通过校验，只用来对照字段结构。**做真实皮肤不要从零写**——把
+`src/skins.py` 里 `_PLAIN_LIGHT` / `_PLAIN_DARK` 两份 token 拷出来改值就行
+（流程见第 9 节），那样 26 个键一个不漏。
 
 ```json
 {
-  "id": "liquid-glass",
-  "name": "液态玻璃",
+  "id": "my-theme",
+  "name": "我的主题",
   "version": "1.0.0",
   "api": 1,
-  "engine": "bitmap",
-  "performance": "standard",
+  "engine": "flat",
+  "performance": "minimal",
   "chrome": "custom",
-  "author": "WBOX",
-  "description": "半透明 + 背景模糊 + 圆角阴影",
-  "metrics": { "row": 52, "font": 15, "icon": 22, "titlebar": 48 },
-  "radius": { "window": 26, "card": 20, "row": 14 },
-  "assets": {
-    "backdrop": "assets/backdrop.png",
-    "mask": "assets/mask.png",
-    "shadow": "assets/shadow.png"
-  },
-  "light": {
-    "fg": "#0A0A0A", "t2": "#949494", "t3": "#B0B0B0", "t4": "#C8C8C8",
-    "hair": "#16161616", "hair_strong": "#24242424",
-    "fill": "#0B0B0B0B", "fill_2": "#13131313", "press": "#1A1A1A1A",
-    "inset": "#FFFFFF6B", "glass": "#FFFFFF8A", "glass_hi": "#FFFFFFEB",
-    "glass_line": "#FFFFFF8C", "glass_edge": "#00000012",
-    "switch_off": "#7878804D", "knob": "#FFFFFF", "on": "#000000", "on_knob": "#FFFFFF",
-    "icon_bg": "#000000", "icon_fg": "#FFFFFF",
-    "menu_base": "#FCFCFDB8", "pop_base": "#FCFCFDF7",
-    "amb0": "#E7E7EC", "amb1": "#FFFFFF", "amb2": "#C4C4CF", "amb3": "#FBFBFD"
-  },
-  "dark": { "...": "同结构，26 个键" }
+  "author": "你",
+  "description": "一句话说明",
+  "metrics": { "row": 40, "font": 13, "icon": 16, "titlebar": 36 },
+  "radius": { "window": 0, "card": 0, "row": 0 },
+  "light": { "fg": "#0A0A0A", "t2": "#595959", "t3": "#767676", "t4": "#A3A3A3",
+             "hair": "#E6E6E6", "hair_strong": "#CFCFCF",
+             "fill": "#F0F0F0", "fill_2": "#F7F7F7", "press": "#E6E6E6",
+             "inset": "#FAFAFA",
+             "glass": "#FFFFFF", "glass_hi": "#FFFFFF",
+             "glass_line": "#E6E6E6", "glass_edge": "#B0B0B0",
+             "switch_off": "#C9C9C9", "knob": "#FFFFFF",
+             "on": "#111111", "on_knob": "#FFFFFF",
+             "icon_bg": "#111111", "icon_fg": "#FFFFFF",
+             "menu_base": "#FFFFFF", "pop_base": "#FFFFFF",
+             "amb0": "#FFFFFF", "amb1": "#F5F5F5", "amb2": "#E8E8E8",
+             "amb3": "#FAFAFA" },
+  "dark": { "同结构，26 个键一个不少": "" }
 }
 ```
 
 颜色写法：`#RRGGBB` 或 `#RRGGBBAA`（8 位带 alpha）。tkinter 不认 8 位十六进制，
-落地时由 `skins.py` 转成 `#RRGGBB` + 独立 alpha，合成到窗口底色上。
+落地时由 `skins.py` 的 `flatten_tokens()` 合成到窗口底色上换成不透明 `#RRGGBB`。
+
+**v2.17.0 起 `engine` / `performance` / `radius` 只是元数据**：骨架只有默认那套，
+写什么都不换骨架，`radius` 也恒按 0 渲染。声明 `standard` 的老包不报错、照常加载，
+按默认骨架显示；新皮肤一律写 `minimal` + `flat`。`assets` 不要带——默认骨架不读
+位图，带了会被「`performance=minimal` 不许有位图」这条校验直接拒掉。
 
 ---
 
 ## 4. 26 个颜色 token
 
-名字固定、语义固定，皮肤只能改值。缺任意一个 → 拒绝加载，回退内置极简皮肤。
+名字固定、语义固定，皮肤只能改值。缺任意一个 → 拒绝加载，回退内置默认皮肤。
 （初稿写 25 个是数漏了 `glass_edge`；实现以 `skins.TOKENS` 为准，共 26 个。）
 
 | 组 | token | 用途 |
@@ -132,8 +150,9 @@ v2.10.0 起液态玻璃**不再内置**（产品决定：先打磨极简），�
 | 卡片与窗口 | `inset` | 分组列表的内凹底 |
 | | `glass` `glass_hi` `glass_line` `glass_edge` | 窗口底 / 顶部高光 / 内描边 / 外描边 |
 | 开关 | `switch_off` `knob` `on` `on_knob` | 关闭轨 / 关闭钮 / 开启轨 / 开启钮 |
+| 强调（复用于开关之外） | `on` `on_knob` | v2.15.0 起 `on` 还承担**选中态强调**：皮肤单选圈、明暗 / 窗口大小分段选中格、标题栏字标、插件状态点的"生效中"；`on_knob` 同时是选中格上的文字色 |
 | 图标 | `icon_bg` `icon_fg` | 应用图标与托盘的两色 |
-| 浮层 | `menu_base` `pop_base` | 齿轮菜单 / 行设置浮层 |
+| 浮层 | `menu_base` `pop_base` | 皮肤面板 / 插件设置框（v2.18.0 起齿轮菜单已退役，`menu_base` 只是历史 token 名） |
 | 舞台 | `amb0` `amb1` `amb2` `amb3` | 仅设计稿使用，落地忽略 |
 
 **降级约定**：`engine=flat` 的皮肤不读 `glass*` 与 `assets.*`，这几个 token 仍需存在（可填纯色）。
@@ -154,13 +173,14 @@ v2.10.0 起液态玻璃**不再内置**（产品决定：先打磨极简），�
   极简档 `anim_ms` 恒 0，所有过渡直跳终态。
 
 - 安装时按声明值静态校验；加载时再核对一遍实际行为（例如 `performance=minimal` 却提供 `assets`，直接判不合格）。
-- 设置页的皮肤卡片上必须显示这张标签：`标准` / `最省`，不许隐藏。
-- 目前内置只发一档：`plain`（minimal，v2.10.0 起唯一内置）。`standard` 档渲染
-  骨架保留，第三方皮肤可声明使用（液态玻璃样例见 3.3）。
+- 设置页的皮肤卡片上必须显示成本标签（v1.2.0 起统一为「默认骨架」），不许隐藏——
+  用户有权知道一套皮肤贵不贵。
+- 内置只有 `plain`（显示名「默认」，唯一内置）。`standard` 只是老包里会出现的
+  历史声明：加载不受影响，渲染一律按默认骨架——不换卡片、不换浮层、不开动效。
 
 ### 两档的实测口径
 
-| 项目 | 液态玻璃 | 极简 |
+| 项目 | 液态玻璃（v2.10.0 前，已退役） | 默认 |
 |---|---|---|
 | 整窗位图 | **0 张**（原计划 3 张 / 2.6 MB，落地改为 flat + 预合成） | 0 |
 | 位图常驻内存 | 0 | 0 |
@@ -197,7 +217,7 @@ v2.10.0 起液态玻璃**不再内置**（产品决定：先打磨极简），�
 4. **不改布局语义**：只改颜色、圆角、字号、行高；不改控件顺序、不隐藏功能、不加按钮。
 5. **不超预算**：见第 5 节表格。
 
-违反任一条 → 拒绝加载 → 面板回退 `plain` → `guard.log` 记一行。
+违反任一条 → 拒绝加载 → 面板回退 `plain`（显示名「默认」） → `guard.log` 记一行。
 
 ---
 
@@ -212,12 +232,27 @@ v2.10.0 起液态玻璃**不再内置**（产品决定：先打磨极简），�
 7. `id` 不与功能插件重名（`ace` / `afterburner` / `gamepp` / `popup` / `desktop_hud`）
 
 ```
-# 校验
-python -c "import sys; sys.path.insert(0, 'src'); import skin_package; \nprint(skin_package.inspect(r'dist\mytheme.wbskin')['id'])"
+# 校验（只读，返回 id / name / version / members / total_bytes）
+python -c "import sys; sys.path.insert(0,'src'); import skin_package; print(skin_package.inspect('dist/kuan-green.wbskin')['id'])"
 
-# 打包：按第 3 节结构把 skin.json 与 assets 写进 zip（.wbskin 就是普通 zip），
-# 打完务必用 inspect() 自检一遍；没有独立 CLI
+# 打包（v2.15.0 起有正式函数，打完自动 inspect 自检并返回 id/version）
+python -c "import sys; sys.path.insert(0,'src'); import skin_package; \
+r=skin_package.pack('design/themes/kuan-green','release/kuan-green.wbskin'); print(r['id'], r['version'])"
+
+# 安装回归：装进临时目录再 load_dir，确认 catalog 能列出、几何与默认一致
+python -c "import sys,tempfile,shutil; sys.path.insert(0,'src'); import skin_package, skins; \
+d=tempfile.mkdtemp(); sk=skin_package.install_zip('release/kuan-green.wbskin', d); \
+print(sk.id, sk.name, len(sk.tokens('light'))); shutil.rmtree(d, ignore_errors=True)"
 ```
+
+**产物别放 `dist\`**：那是 PyInstaller 的输出目录，`build_exe.bat` 结尾会
+`rmdir /S /Q dist`，打好的皮肤包会跟着一起被删。用 `release\` 或任意仓库外目录。
+
+**`.zip` 与 `.wbskin` 是同一个包**：`.wbskin` 就是普通 zip，这个后缀只做品牌和
+文件对话框的默认筛选。v2.15.0 起面板的「从文件安装皮肤…」同时接受 `*.wbskin`
+和 `*.zip`，所以作者可以直接：
+`copy release\kuan-green.wbskin release\kuan-green.zip` 两个后缀各发一份，
+不必让用户改扩展名或切「所有文件」。
 
 校验实现放在 `src/plugin_package.py` 旁边新增的 `skin_package.py`，
 与插件包共用 zip 安全读取函数，避免两份路径穿越检查各写一遍。
@@ -240,9 +275,9 @@ python -c "import sys; sys.path.insert(0, 'src'); import skin_package; \nprint(s
 - 第三方皮肤装在 `%LOCALAPPDATA%\WBOX\skins\<id>\`，不写注册表，
   卸载 = 删目录 + 若当前正在用则回退 `plain`。
 
-**落地顺序建议**：先做 `plain`（原生控件、零位图，最快跑通数据链路），
-再把现有的液态玻璃搬进 `plugins/skins/liquid-glass/`。反过来做会把位图管线先钉死，
-之后想简化就得拆一遍。
+**落地顺序建议**（v1.2.0 起只剩一条路）：骨架只有默认一套，所以先做配色主题
+（零位图，最快跑通数据链路），再考虑要不要调 `metrics` 尺寸；位图管线已不存在，
+没有"先做位图皮肤"这条分支了。
 
 ### 落地实况（v2.7.0，2026-11-17）
 
@@ -306,7 +341,7 @@ python -c "import sys; sys.path.insert(0, 'src'); import skin_package; \nprint(s
 | 行内展开点不开 | 已修：行面大部分面积被子控件（图标 / 名称 / 箭头 Canvas·Label）盖住，Tk 事件不穿透 `create_window`；给这三个子控件补 `<ButtonRelease-1>` → `toggle_inline`，开关除外 |
 | 用户皮肤目录 | 实际落点 `<安装目录>/skins/<id>/`（与 `config.json` 同级，`skins.skins_dir(BASE)`）；第 8 节计划表里的 `%LOCALAPPDATA%\WBOX\skins` 与 `plugins/skins/` 均未采用 |
 | 显示名与系统标识 | v2.11.0 起全部统一 WBOX（窗口 / 快捷方式 / 卸载显示名 / 指南标题 / exe / 安装目录 / 任务 / 注册表键 / 管道 / 互斥体 / `%LOCALAPPDATA%\WBOX`）；旧 Wingman 安装由安装器 `migrate_legacy()` 自动迁移 |
-| 自检口径 | `--layout-check` 两遍：解析出的皮肤 + 合成 `layout-std`（standard）各扫一遍 96–240 dpi，内置单档后 standard 路径仍被覆盖 |
+| 自检口径 | `--layout-check` 两遍：解析出的皮肤 + 一枚合成 `layout-legacy`（声明 standard 的老包）各扫一遍 96–240 dpi，确认降级渲染照样不越界 |
 
 **与设计的明示取舍**（不是没做完，是决定不做）：
 
@@ -323,7 +358,96 @@ python -c "import sys; sys.path.insert(0, 'src'); import skin_package; \nprint(s
 
 ---
 
-## 9. 极简皮肤（plain）的实现要点
+## 9. 派生一套配色主题（以默认皮肤为底）
+
+WBOX 的「主题」= 用户皮肤，不是引擎里的一条分支。所以做一套配色主题的做法固定：
+**把默认皮肤拷出来，只换 26 个 token，几何一个字不动。**
+成品范例：`design/themes/kuan-green/`（酷安绿，v1.0.0）。
+
+### 9.1 骨架五项不许动
+
+| 字段 | 值 | 为什么 |
+|---|---|---|
+| `engine` | `flat` | 配色主题不需要位图；要位图就不是配色主题了 |
+| `performance` | `minimal` | 保住零位图 / 零动画 / 零浮层，开销与默认完全一致 |
+| `chrome` | `custom` | 自绘标题栏，字标与窗口控制跟着皮肤走 |
+| `metrics` | `40 / 13 / 16 / 36` | 行高 / 字号 / 图标 / 标题栏 |
+| `radius` | `0 / 0 / 0` | 方角 |
+
+这五项必须与 `skins.BUILTIN['plain']` 逐项相同。v1.2.0 起面板里已经没有
+`if self.glass` 这类骨架分支了，五项相同是**换配色不会换布局**的静态证据；
+`metrics` 改大虽然不换布局，但窗口会跟着长高，自检要重跑。
+
+自检可以一行验完：
+
+```python
+plain = [x for x in skins.builtin_skins() if x.id == 'plain'][0]
+assert s.metrics == plain.metrics and s.radius == plain.radius
+assert s.engine == plain.engine and s.performance == plain.performance
+assert s.chrome == plain.chrome
+```
+
+### 9.2 只改 26 个 token
+
+`skin.json` 的 `light` / `dark` 各给一套，26 个键一个不少（键名固定，见第 4 节）。
+落地时 `skins.flatten_tokens()` 会把 8 位带 alpha 的值合成到窗口底色上，
+面板实际画出来的是**不透明色**——所以对比度要拿合成后的值算。
+
+22 个落地 + 4 个舞台占位（`amb0`–`amb3` 只在设计稿里用，落地忽略，但不许缺）。
+
+### 9.3 配色三条硬规则
+
+1. **全屏只有一个彩色**。`on` 是唯一强调色，v2.15.0 起它同时承担开关开态轨道、
+   单选圈、分段选中格、标题栏字标、插件状态点的「生效中」。
+   不要为「文字用深一点的绿」再加第二个绿——挑一个在两个方向都能用的值
+   （酷安绿：白字压 `#0C8040` 是 5.03:1，它当绿字压白底是 4.96:1）。
+2. **中性色带主色色相**。正文不用纯黑，用主色的深色衍生（酷安绿是 `#0A2216`）；
+   窗口底、发丝线、悬停底同理。纯灰底配彩点，那个绿看起来就是贴上去的。
+3. **对比度达标才发**，见 9.4。不达标宁可加深主色，不要靠加大字重糊过去。
+
+### 9.4 对比度门槛（发布前必测）
+
+| 组合 | 最低 | 用途 |
+|---|---|---|
+| `fg` / 窗口底 | 12 | 正文、行名 |
+| `t2` / 窗口底 | 7 | 次级文字 |
+| `t3` / 窗口底 | 4.5 | 提示、版本号 |
+| `t3` / 悬停底 `fill_2` | 4.5 | 最不利情形（悬停时提示文字在 hover 底上） |
+| 白字 / `on`（浅色） | 4.5 | 开关把手、分段选中格文字 |
+| 近黑字 / `on`（深色） | 4.5 | 同上（深色主题的 `on` 是亮色，字要压深色） |
+
+测法：先 `flatten_tokens()` 合成再算，别拿设计稿里的半透明值算。酷安绿的实测值
+写在它的 `README.md` 里，可直接对表。
+
+### 9.5 命名与版本
+
+- `id`：小写 + 连字符，**必须等于目录名**（`skins\kuan-green\`）。
+  `pack()` 会拦下不一致的情况——装完的落点就是 `skins\<id>\`，两者不一致时
+  卡片能列出、点下去找不到皮肤。
+- `name`：≤ 4 个汉字（外观列表一行放得下）。
+- `version`：三段式。只调颜色升 PATCH；加/改 token 语义升 MINOR；换骨架升 MAJOR。
+
+### 9.6 制作流程（六步）
+
+1. 拷 `design/themes/kuan-green/` 整个目录，目录名改成新 `id`。
+2. 改 `skin.json`：`id` / `name` / `version` / `description` / `light` / `dark`。
+3. 出设计预览：目录里的 `preview.html` 是自包含的（无外链），改 token 后
+   用 Edge headless 截图逐段核对；四张面板按真机尺寸（480 宽 / 行 40 / 标题栏 36）。
+4. 生成 `preview.png`：256 × 144（16:9），从预览截图里裁面板区域缩下来。
+5. 打包：`skin_package.pack()`，打完自动 `inspect()`；命令见第 7 节。
+6. 真机看：面板「从文件安装皮肤…」装 `dist/<id>.wbskin`，或手动放
+   `<安装目录>\skins\<id>\`。看三样：列表页、设置页、深色。
+
+### 9.7 搭配 v2.15.0 的状态点
+
+插件行的状态点取 `on`（生效中）/ `t4`（已关闭）/ `danger`（运行异常）。
+配色主题不用为它单独准备 token——它复用的就是开关开态那一档。
+如果某套主题的 `on` 是深色（如默认皮肤的近黑），点会跟着变深，这是对的：
+点表达的是「当前主题的强调」，不是「绿色」。
+
+---
+
+## 10. 默认皮肤（plain）的实现要点
 
 它存在的唯一理由是"最不吃性能"，所以下面每一条都是硬约束：
 
@@ -353,8 +477,10 @@ python -c "import sys; sys.path.insert(0, 'src'); import skin_package; \nprint(s
 
 ---
 
-## 10. 版本与兼容
+## 11. 版本与兼容
 
 - `api` 只在 token 集合或字段语义发生**不兼容变化**时 +1；加可选字段不升 api。
 - 面板遇到 `api` 高于自身支持的皮肤：卡片标「需要更新」，不加载、不报错。
-- `performance` 降档不算破坏兼容；升档（`minimal` → `standard`）在同一 api 内允许，但用户会看到标签变化。
+- `performance` 自 v1.2.0 起只是元数据：降档 / 升档都不影响渲染，也不影响成本标签
+  （统一显示「默认骨架」），不再算兼容性变化。声明 `standard` 的老包继续加载，
+  用户无需迁移。

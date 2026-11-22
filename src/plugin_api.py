@@ -387,9 +387,10 @@ class WBOXPlugin(object):
             cfg_set_path(cfg, path, bool(on))
         return True
 
-    def gui_menu_rows(self, cfg):
-        """-> [{'text','icon','hint','action'}]，可选，插入菜单「插件」分组。"""
-        return []
+    # v2.18.0：原来的 gui_menu_rows() 已删除。那是「往齿轮气泡菜单的插件分组里
+    # 塞一行」的钩子，而面板从来没有真的调用过它（菜单是按注册表遍历出来的），
+    # 菜单整块退役后这个方法就是纯契约负担。第三方插件里留着同名方法无害，
+    # 只是不会被调用。插件自定义界面走 manifest.settings（行内展开的浮层）。
 
     # ---- 自检 ----
     def on_self_test(self, out):

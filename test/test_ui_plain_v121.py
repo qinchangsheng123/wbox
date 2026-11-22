@@ -168,8 +168,10 @@ def main():
         check(app.pane == 'set', '切明暗后仍停在设置页：pane=%s' % app.pane)
         check(disk().get('ui_appearance') == 'dark', 'ui_appearance 落盘 dark')
         dark = labels(app.set_inner, '深色')[0]
-        check(dark.cget('bg') == app.colors['fg'],
-              '选中格是反色底：%s' % dark.cget('bg'))
+        # v2.15.0 B 案：选中格吃强调色 token on（legacy inv），
+        # 默认皮肤里 inv 就是 fg，配色主题才显色。
+        check(dark.cget('bg') == app.colors['inv'],
+              '选中格是强调色底：%s' % dark.cget('bg'))
     finally:
         try:
             root.attributes('-alpha', 1.0)

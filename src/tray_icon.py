@@ -99,7 +99,10 @@ WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_long, wintypes.HWND, wintypes.UINT,
                              wintypes.WPARAM, wintypes.LPARAM)
 
 
-def _u():
+_USER32 = None
+
+
+def _build_u():
     u = ctypes.WinDLL('user32', use_last_error=True)
     u.CreateWindowExW.restype = wintypes.HWND
     u.CreateWindowExW.argtypes = [wintypes.DWORD, wintypes.LPCWSTR,
@@ -147,12 +150,39 @@ def _u():
     return u
 
 
-def _s():
+def _u():
+    """user32 函数指针表，**进程内只建一次**。
+
+    原来每次调用都重新 WinDLL + 设 25 条 argtypes/restype，而 `_on_msg`
+    （窗口过程）每收一条消息就走一次：右键菜单、悬停、TaskbarCreated 全在内。
+    持续分配 ctypes 对象会触发 GC，而进程里若有待回收的 tkinter 控件，它的
+    `__del__` 会在托盘线程里碰 Tk——那不是线程安全的，实测表现为
+    CreateWindowEx 期间卡住、图标挂不上（v2.17.0 复现）。缓存单例既去掉
+    每条消息的固定开销，也避开这个跨线程析构坑。
+    """
+    global _USER32
+    if _USER32 is None:
+        _USER32 = _build_u()
+    return _USER32
+
+
+_SHELL32 = None
+
+
+def _build_s():
     s = ctypes.WinDLL('shell32', use_last_error=True)
     s.Shell_NotifyIconW.restype = wintypes.BOOL
     s.Shell_NotifyIconW.argtypes = [wintypes.DWORD,
                                     ctypes.POINTER(NOTIFYICONDATAW)]
     return s
+
+
+def _s():
+    """shell32 同理，只建一次。"""
+    global _SHELL32
+    if _SHELL32 is None:
+        _SHELL32 = _build_s()
+    return _SHELL32
 
 
 class TrayIcon(object):

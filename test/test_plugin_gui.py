@@ -7,9 +7,13 @@
   [1] 3 个插件      -> 主页面 3 行，名称/图标/简介与 manifest 一致
   [2] 删掉 1 个     -> 2 行，被删的 id 不在 self.switches 里
   [3] 空目录        -> 0 行 + 灰字提示，不抛异常
-  [4] 坏插件        -> 主页面不出现该行，齿轮菜单显示「未能加载」
+  [4] 坏插件        -> 主页面不出现该行，注册表保留 load_failed（不画状态点）
   [5] 拨开关        -> config.json 里对应 toggle 路径被写，其它键原样保留
-  [6] 运行期异常    -> 菜单 hint 变「运行异常 N 次」；面板绝不写状态文件
+  [6] 运行期异常    -> 行尾状态点变 bad；面板绝不写状态文件
+
+v2.18.0：齿轮浮层菜单整块删除，原来「菜单某一行的 hint 文字」断言全部
+改成 plugin_dot_state() 的三态断言——状态点现在是面板上唯一表达插件
+能不能用的地方（开关是意愿，点是事实）。
 
 用 probe=True + -alpha 0 建面板：布局、行数、控件层级都是真的，只是不显示。
 """
@@ -141,14 +145,12 @@ def new_app():
 
 
 def drop(root, app):
-    """关菜单 + 收掉全部挂起的 after 定时器，最后销毁窗口。
+    """收掉全部挂起的 after 定时器，最后销毁窗口。
 
-    必须先取消定时器：菜单的 _menu_watch 是按 Toplevel 注册的 120ms 轮询，
-    窗口销毁后定时器仍会触发，Tcl 会往 stderr 打一串
-    `invalid command name "..._menu_watch"`（不影响结果，但会淹没测试输出）。
+    定时器若不清，窗口销毁后仍会触发，Tcl 会往 stderr 打
+    `invalid command name "..."`（不影响结果，但会淹没测试输出）。
     """
     try:
-        app.close_settings()
         for job in root.tk.call('after', 'info'):
             try:
                 root.after_cancel(str(job))
@@ -177,20 +179,6 @@ def row_icon(app, pid):
     return None
 
 
-def menu_rows(app):
-    return [w for w in sg.walk(app.settings_inner)
-            if isinstance(w, tk.Frame) and hasattr(w, 'hint_label')]
-
-
-def menu_hint(app, text):
-    """按行文字找菜单行，返回右侧提示文本。"""
-    for row in menu_rows(app):
-        for w in row.winfo_children():
-            if isinstance(w, tk.Label) and w.cget('text') == text:
-                return row.hint_label.cget('text') if row.hint_label else ''
-    raise AssertionError('菜单里没有这一行：' + text)
-
-
 def main_texts(app):
     labels = []
     for w in sg.walk(app.main):
@@ -215,23 +203,21 @@ try:
     step([row_icon(app, p) for p in ('demo_alpha', 'demo_beta', 'demo_gamma')]
          == ['link', 'shield', 'block'], '图标取自 manifest.icon')
     # ＋ 的提示挂在 Frame 上（v2.1.0），功能行的 tip 才是 Label。
-    # v2.7.0：字标 WBOX 本身也是一个 Label（点开菜单），它排在所有功能行之前。
+    # v2.17.0：字标不再是菜单入口，那条「点开菜单」的提示随之删除，
+    # 所以 Label 类 tip 只剩功能行这三条。
     feature_tips = [t.text for t in app.tooltips
                     if isinstance(t.widget, tk.Label)]
-    step(feature_tips[1:] == ['甲的简介', '乙的简介', '丙的简介'],
-         '功能行的悬停简介取自 manifest.tip')
-    step(bool(feature_tips) and '菜单' in feature_tips[0],
-         '字标自带一条「点开菜单」的提示')
+    step(feature_tips == ['甲的简介', '乙的简介', '丙的简介'],
+         '功能行的悬停简介取自 manifest.tip：%r' % (feature_tips,))
+    step(all('菜单' not in t for t in feature_tips),
+         '字标不再挂菜单提示（入口是右上角「设置」）')
     step(app.vars['demo_alpha'].get() is False and
          app.vars['demo_beta'].get() is False,
          '开关初始值由插件的 gui_state 算出（配置缺键 -> 关）')
-    app.open_settings()
-    root.update()
-    step(len(menu_rows(app)) == sg.menu_row_count(app.entries_all),
-         '菜单行数 = menu_row_count(注册表) = %d' % sg.menu_row_count(app.entries_all))
-    step(menu_hint(app, '甲功能') == '正常 · 已关闭',
-         '菜单行显示「正常 · 已关闭」（v2.9.0 起版本号不进界面）：%r'
-         % menu_hint(app, '甲功能'))
+    step(sg.plugin_dot_state(app.entries[0], None, False) == 'off',
+         '开关关 → 行尾状态点 off')
+    step(sg.plugin_dot_state(app.entries[0], None, True) == 'ok',
+         '开关开 → 行尾状态点 ok')
     drop(root, app)
 
     # ---------------- [2] 删掉一个插件 ----------------
@@ -242,10 +228,8 @@ try:
          '主页面剩 2 行')
     step('demo_beta' not in app.switches, '被删的 id 不在 switches 里')
     step('乙功能' not in main_texts(app), '被删插件的名字不再出现在主页面')
-    app.open_settings()
-    root.update()
-    step(len(menu_rows(app)) == sg.menu_row_count(app.entries_all),
-         '菜单行数跟着注册表缩短')
+    step('乙功能' not in [e.name for e in app.entries_all],
+         '删掉的插件也不在注册表里（自检不会列出幽灵插件）')
     drop(root, app)
 
     # ---------------- [3] 空目录 ----------------
@@ -255,15 +239,11 @@ try:
     step(app.entries == [] and app.switches == {}, '0 个插件时没有任何功能行')
     step(any('还没有安装任何插件' in t for t in main_texts(app)),
          '主页面出现「还没有安装任何插件」提示')
-    app.open_settings()
-    root.update()
-    step(all(any(isinstance(w, tk.Label) for w in r.winfo_children())
-             for r in menu_rows(app)), '菜单每行都有文字（无空行）')
-    step(menu_hint(app, '已安装插件') == '还没有安装插件', '菜单插件分组提示「还没有安装任何插件」')
+    step(app.entries_all == [], '空目录时注册表也为空（没有幽灵菜单行）')
     drop(root, app)
 
     # ---------------- [4] 坏插件 ----------------
-    print('[4] 坏插件（plugin.py 顶部 raise）：主页面没有，菜单显示「未能加载」')
+    print('[4] 坏插件（plugin.py 顶部 raise）：主页面没有，注册表留痕')
     clear_plugins()
     make_plugin('demo_bad', '坏功能', icon='dot', order=10, raises=True)
     root, app = new_app()
@@ -271,10 +251,8 @@ try:
     step('demo_bad' not in app.switches, '坏插件没有开关')
     step(len(app.entries_all) == 1 and app.entries_all[0].status == 'load_failed',
          '注册表里仍保留该条（状态 load_failed），不静默丢掉')
-    app.open_settings()
-    root.update()
-    step('未能加载' in menu_hint(app, '坏功能'),
-         '菜单里显示「未能加载」：%r' % menu_hint(app, '坏功能'))
+    step(sg.plugin_dot_state(app.entries_all[0], None, None) is None,
+         '加载失败的插件不画状态点（它不占主页面）')
     drop(root, app)
 
     # ---------------- [5] 拨开关 ----------------
@@ -300,7 +278,7 @@ try:
     drop(root, app)
 
     # ---------------- [6] 运行期异常 ----------------
-    print('[6] plugins_state.json 里的 degraded：菜单显示「运行异常 N 次」')
+    print('[6] plugins_state.json 里的 degraded：行尾状态点变 bad')
     make_plugin('demo_alpha', '甲功能', icon='link', order=10)
     with open(STATE_PATH, 'w', encoding='utf-8') as f:
         json.dump({'generated_at': 0, 'guard_pid': 1, 'api': 1,
@@ -312,13 +290,14 @@ try:
                    ]}, f, ensure_ascii=False)
     before = open(STATE_PATH, 'rb').read()
     root, app = new_app()
-    app.open_settings()
-    root.update()
-    step(menu_hint(app, '甲功能') == '运行异常 3 次 · 已关闭',
-         'hint 变成「运行异常 3 次」：%r' % menu_hint(app, '甲功能'))
-    step('ghost_gone' not in [e.id for e in app.entries_all] and
-         all('ghost_gone' not in r.hint_label.cget('text')
-             for r in menu_rows(app) if r.hint_label),
+    entry_a = [e for e in app.entries_all if e.id == 'demo_alpha'][0]
+    step(sg.plugin_dot_state(entry_a, app.runtime_state.get('demo_alpha'),
+                             False) == 'bad',
+         'degraded + error_count=3 → 状态点 bad（关着也先报警）')
+    step(sg.plugin_dot_state(entry_a, app.runtime_state.get('demo_alpha'),
+                             True) == 'bad',
+         '开着同样 bad：坏过的插件优先报事实')
+    step('ghost_gone' not in [e.id for e in app.entries_all],
          '状态文件里有、注册表里没有的 id 不显示（插件已被删）')
     drop(root, app)
     step(open(STATE_PATH, 'rb').read() == before,
@@ -327,14 +306,14 @@ try:
     with open(STATE_PATH, 'w', encoding='utf-8') as f:
         f.write('{ this is not json')
     root, app = new_app()
-    app.open_settings()
-    root.update()
-    step(menu_hint(app, '甲功能') == '正常 · 已关闭',
-         '状态文件坏了就忽略，不报错、不弹窗')
+    entry_a = [e for e in app.entries_all if e.id == 'demo_alpha'][0]
+    step(sg.plugin_dot_state(entry_a, app.runtime_state.get('demo_alpha'),
+                             False) == 'off',
+         '状态文件坏了就当没有异常：状态点回到 off，不报错、不弹窗')
     drop(root, app)
 
     # ---------------- [7] 启用态 / 需管理员 ----------------
-    print('[7] 菜单 hint 的启用态与「需管理员」')
+    print('[7] 状态点的启用态与「需管理员」')
     clear_plugins()
     admin_dir = make_plugin('demo_admin', '戊功能', icon='shield', order=10,
                             toggle=['demo_admin.enabled'])
@@ -349,29 +328,20 @@ try:
     entries = sg.plugin_entries()
     step(len(entries) == 1 and entries[0].requires_admin is True,
          'manifest.requires_admin 解析进 RegistryEntry')
-    step(sg.plugin_hint(entries[0], None, None) == '正常',
-         'switch=None 时不追加启用态（调用方没要求就不猜）')
-    real_is_admin = sg.is_admin
-    try:
-        sg.is_admin = lambda: False
-        step(sg.plugin_hint(entries[0], None, True)
-             == '正常 · 已启用 · 需管理员',
-             '未提权：追加「已启用」+「需管理员」')
-        sg.is_admin = lambda: True
-        step(sg.plugin_hint(entries[0], None, False) == '正常 · 已关闭',
-             '已提权：不追加「需管理员」')
-    finally:
-        sg.is_admin = real_is_admin
-    # 面板上的实时值优先：拨开关后菜单立刻跟着变（不必先保存）
+    step(sg.plugin_dot_state(entries[0], None, True) == 'ok',
+         '需管理员插件开着 → 状态点 ok（需管理员只影响能否启动）')
+    step(sg.plugin_dot_state(entries[0], None, False) == 'off',
+         '关着 → 状态点 off')
+    # 面板上的实时值优先：拨开关后状态点立刻跟着变（不必先保存）
     root, app = new_app()
     step(app.vars['demo_admin'].get() is True, '开关初始为开（配置里 enabled=true）')
+    step(sg.plugin_dot_state(app.entries[0], None, True) == 'ok',
+         '初始状态点 ok')
     app.switches['demo_admin'].event_generate('<Button-1>')
     root.update()
-    app.open_settings()
-    root.update()
-    hint = menu_hint(app, '戊功能')
-    step(hint.startswith('正常 · 已关闭'),
-         '拨到关之后菜单立刻显示「已关闭」（读面板实时值）：%r' % hint)
+    step(sg.plugin_dot_state(app.entries[0], None,
+                             app.vars['demo_admin'].get()) == 'off',
+         '拨到关之后状态点立刻变 off（读面板实时值）')
     drop(root, app)
 finally:
     shutil.rmtree(TMP, ignore_errors=True)

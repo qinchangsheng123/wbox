@@ -8,14 +8,59 @@ token，所以换皮肤只换 token，控件代码零改动。
 import math
 import tkinter as tk
 
-from sprite import (COV_CACHE as _COV_CACHE, SS as _SS,
+from sprite import (COV_CACHE as _COV_CACHE,
                     cov_cached as _cov_cached, coverage as _coverage,
-                    round_rect_pts as _rr_pts, sprite as _sprite)
-from ui_gfx import mix_hex, round_rect
+                    sprite as _sprite)
+from ui_gfx import mix_hex
 
 # ---- Switch / Glyph / ToolTip ----
+class Dot(tk.Canvas):
+    """实心状态点（v2.15.0，插件行「行内」档专用）。
+
+    6px 的圆在 tk.Canvas 的 create_oval 下没有抗锯齿，边是一圈阶梯；
+    所以和图标、开关一样走 sprite 的 4×4 超采样。尺寸跟皮肤走（px），
+    底色由宿主在悬停时 set_bg() 同步，避免边缘留一圈旧底色。
+    """
+
+    def __init__(self, master, app, color, size=None):
+        self.app = app
+        self.color = color
+        self.d = size or app.px(6)
+        self.bg = app.colors['bg']
+        tk.Canvas.__init__(self, master, width=self.d, height=self.d,
+                           bg=self.bg, highlightthickness=0, bd=0)
+        self.draw()
+
+    def set_color(self, color):
+        self.color = color
+        self.draw()
+
+    def set_bg(self, color):
+        self.bg = color
+        try:
+            self.configure(bg=color)
+        except Exception:
+            pass
+        self.draw()
+
+    def draw(self):
+        self.delete('all')
+        key = ('__dot__', self.d)
+        cov = _COV_CACHE.get(key)
+        if cov is None:
+            cov = _coverage(self.d, self.d,
+                            [(1, self.d / 2.0, self.d / 2.0, self.d / 2.0)])
+            _COV_CACHE[key] = cov
+        self._img = _sprite(self, self.d, self.d, [(cov, self.color)], self.bg)
+        self.create_image(0, 0, anchor='nw', image=self._img)
+
+
 class Switch(tk.Canvas):
-    """开关：玻璃档 46×28 胶囊；极简档 36×18 方角（行内 30×16）。"""
+    """开关：36×18 胶囊（行内 30×16）。
+
+    v2.17.0 起骨架只剩默认一套，尺寸不再跟皮肤的 performance 分档，
+    所有皮肤都是这一组刻度（省一半像素，也就不用为第三方皮肤多画一版）。
+    """
 
     def __init__(self, master, app, value=False, command=None, small=False):
         self.app = app
@@ -25,15 +70,13 @@ class Switch(tk.Canvas):
         self.small = bool(small)
         self._anim_knob = None      # 动效中的把手位置 0..1（None = 按 value 画）
         self._anim_fill = None      # 动效中的轨道色（None = 按 value 取 token）
-        # 尺寸跟皮肤走：玻璃 46×28（iOS 规格）、极简 36×18（少画一半像素）。
-        # small=行内展开里的小号（设计稿 .p-sw.sm 30×16）。
-        perf = getattr(getattr(app, 'skin', None), 'performance', 'standard')
+        # 尺寸固定：36×18（行内 30×16），不再按 performance 分两档。
         if self.small:
             self.w = app.px(30)
             self.h = app.px(16)
         else:
-            self.w = app.px(46 if perf == 'standard' else 36)
-            self.h = app.px(28 if perf == 'standard' else 18)
+            self.w = app.px(36)
+            self.h = app.px(18)
         self.bg = app.colors['bg']
         self._focused = False
         tk.Canvas.__init__(self, master, width=self.w, height=self.h,
@@ -150,23 +193,14 @@ class Switch(tk.Canvas):
         kp = self._anim_knob if self._anim_knob is not None else (
             1.0 if self.value else 0.0)
         x0 = pad + (w - 2 * pad - k) * kp
-        if not getattr(self.app, 'glass', True):
-            # 极简档：**方角**轨道 + 方角把手（设计稿 .p-sw 36×18 / .p-sw.sm 30×16）。
-            # v2.12.1：原来这里画的是胶囊，跟设计稿的方角差一截——极简档的
-            # 卖点是"方角 + 原生控件"，开关自己先圆了就没法讲这句话。
-            # 边缘都落在整像素上，不需要抗锯齿光栅，直接画矩形最省。
-            self.create_rectangle(0, 0, w, h, fill=fill, outline='')
-            ky = (h - k) / 2.0
-            self.create_rectangle(x0, ky, x0 + k, ky + k, fill=knob,
-                                  outline='')
-        else:
-            if line:
-                round_rect(self, 0, 0, w, h, h // 2, fill=fill, outline=line,
-                           width=max(1, self.app.px(1)))
-            else:
-                round_rect(self, 0, 0, w, h, h // 2, fill=fill, outline='')
-            y0 = (h - k) // 2
-            self.create_oval(x0, y0, x0 + k, y0 + k, fill=knob, outline='')
+        # **方角**轨道 + 方角把手（设计稿 .p-sw 36×18 / .p-sw.sm 30×16）。
+        # v2.12.1：原来这里画的是胶囊，跟设计稿的方角差一截——默认档的
+        # 卖点是"方角 + 原生控件"，开关自己先圆了就没法讲这句话。
+        # 边缘都落在整像素上，不需要抗锯齿光栅，直接画矩形最省。
+        # v2.17.0：骨架只剩这一套，胶囊分支随玻璃骨架删掉了。
+        self.create_rectangle(0, 0, w, h, fill=fill, outline='')
+        ky = (h - k) / 2.0
+        self.create_rectangle(x0, ky, x0 + k, ky + k, fill=knob, outline='')
         if self._focused:
             # 开态轨道是实心底，焦点环反色才看得见；关态用 fg。
             # 环贴着轨道外沿画（Canvas 画不出控件外偏移，见 App._ring 注释）。
@@ -183,7 +217,7 @@ class Glyph(tk.Canvas):
     线宽 round(1.8 * size/24)，方端尖角，双主题只翻 token。
     """
 
-    def __init__(self, master, app, kind, size=None, ink=None):
+    def __init__(self, master, app, kind, size=None, ink=None, badge=None):
         self.app = app
         self.kind = kind
         self.s = size or app.px(22)
@@ -192,10 +226,18 @@ class Glyph(tk.Canvas):
         # 显式指定墨色：标题栏的加号/箭头/窗口控制不能用默认的 t2，
         # 设计稿里它们分别是 fg / t3 / t3 三档。
         self.ink = ink
-        # 极简档走程序化抗锯齿光栅（见 _coverage 注释）；standard 档矢量。
-        self._raster = getattr(getattr(app, 'skin', None), 'performance',
-                               'standard') == 'minimal'
-        tk.Canvas.__init__(self, master, width=self.s, height=self.s,
+        # v2.15.0 状态角标：图标右上角挂一枚状态点（插件行专用）。
+        # Canvas 向外扩出 pad，图标整体下移 pad——多出来的右上角空白归角标。
+        # 角标必须落在图标框外，压着 16px 图标的线条画多少 px 都糊。
+        self.badge = badge
+        self.pad = app.px(6) if badge else 0
+        self.ox, self.oy = 0, self.pad
+        self.cw = self.ch = self.s + self.pad
+        # 一律走程序化抗锯齿光栅（见 sprite.coverage 注释）：
+        # v2.17.0 起没有「standard 档用矢量图元」那条路了，图标与开关
+        # 在小尺寸下都要抗锯齿，覆盖率按 (kind, size) 缓存，重绘只做 colorize。
+        self._raster = True
+        tk.Canvas.__init__(self, master, width=self.cw, height=self.ch,
                            bg=self.bg, highlightthickness=0, bd=0)
         self.draw()
 
@@ -232,7 +274,14 @@ class Glyph(tk.Canvas):
         prims = []
 
         def P(pts):
-            return [v * u for v in pts]
+            # 光栅模式先在 s×s 里算覆盖率（缓存 key 只认 kind/size/flip），
+            # 出图时再用 create_image 平移；矢量模式直接按偏移量算坐标。
+            if raster or not (self.ox or self.oy):
+                return [v * u for v in pts]
+            out = []
+            for i, v in enumerate(pts):
+                out.append(v * u + (self.ox if i % 2 == 0 else self.oy))
+            return out
 
         def flush():
             if prims:
@@ -421,7 +470,37 @@ class Glyph(tk.Canvas):
                 _COV_CACHE[key] = covs
             self._img = _sprite(self, self.s, self.s,
                                 list(zip(covs, [g[1] for g in groups])), self.bg)
-            self.create_image(0, 0, anchor='nw', image=self._img)
+            self.create_image(self.ox, self.oy, anchor='nw', image=self._img)
+        if self.badge:
+            self.draw_badge()
+
+    def draw_badge(self):
+        """图标右上角的状态角标（v2.15.0，插件行专用）。
+
+        三个约束缺一不可：
+          · 直径 7px —— 5px 时扣掉隔离环只剩 2px 实心，肉眼只是一团灰；
+          · 圆心在图标框右外 1px、上外 1px —— 压在框内必然啃图标线条，
+            16px 图标的安全边距只有 2px，没有地方放一枚干净的点；
+          · 4×4 超采样 —— tk.Canvas 的 create_oval 没有抗锯齿，7px 圆是阶梯块。
+
+        隔离环用 self.bg 画大一圈，把图标线条从点下面擦掉。bg 由 set_bg() 在
+        悬停 / 换肤 / 换明暗时同步，所以这一圈永远等于行底色，不需要额外挂钩子。
+        """
+        d = self.app.px(10)                    # 外径（含隔离环）
+        r_in = self.app.px(7) / 2.0            # 实心半径
+        key = ('__badge__', d, r_in)
+        covs = _COV_CACHE.get(key)
+        if covs is None:
+            covs = [_coverage(d, d, [(1, d / 2.0, d / 2.0, d / 2.0)]),
+                    _coverage(d, d, [(1, d / 2.0, d / 2.0, r_in)])]
+            _COV_CACHE[key] = covs
+        self._bimg = _sprite(self, d, d,
+                             [(covs[0], self.bg), (covs[1], self.badge)],
+                             self.bg)
+        cx = self.ox + self.s + self.app.px(1)
+        cy = self.oy + self.app.px(1)
+        self.create_image(cx - d // 2, cy - d // 2, anchor='nw',
+                          image=self._bimg)
 
 class ToolTip(object):
     """悬停名称 320ms 后弹出反色简介；移开、点击、切主题立即收起。"""

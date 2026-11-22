@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WBOX · 插件状态点 · A / C 两种挂法共存</title>
+<style>
+/* ============================================================
+   插件状态点 v1.1.0：A（版本号左侧）与 C（图标右上角标）共存
+   行布局取自 src/settings_gui.py make_row()：
+   pad_l 14 / icon 16 / gap 10 / [版本 44] [开关 36] / tail_gap 4 / tail 22 / 右 10
+   ============================================================ */
+:root{
+  --font:"Microsoft YaHei UI","Segoe UI","PingFang SC",-apple-system,sans-serif;
+  --mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
+  --studio:#080B0A;
+  --ink:#E8EFEA; --ink-2:rgba(232,239,234,.64); --ink-3:rgba(232,239,234,.40);
+  --line:rgba(255,255,255,.10);
+  --brand:#34D07A;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--font); font-size:14px; color:var(--ink); -webkit-font-smoothing:antialiased;
+  background:radial-gradient(900px 600px at 6% -8%, rgba(52,208,122,.10), transparent 62%),
+             radial-gradient(760px 520px at 98% 2%, rgba(12,128,64,.14), transparent 60%),
+             var(--studio);
+}
+button{font:inherit;color:inherit}
+code,.mono{font-family:var(--mono)}
+
+/* 主题 token（同 skin.json） */
+.theme-light{
+  --win:#FCFEFD; --fg:#0A2216; --t2:#40584A; --t3:#5F7368; --t4:#93A69A;
+  --hair:#DCE9E1; --hair2:#BFD3C6;
+  --fill:#E9F2EC; --fill2:#F3F9F5; --press:#DCEAE2; --inset:#F3F9F5;
+  --line2:#DCE9E1; --edge:#9DB5A5;
+  --sw-off:#C2D2C6; --knob:#FFFFFF;
+  --on:#0C8040; --on-knob:#FFFFFF; --danger:#B3261E;
+  --stage:radial-gradient(520px 340px at 22% 6%, #FFFFFF, transparent 70%),
+          radial-gradient(460px 320px at 88% 96%, #DCEAE0, transparent 72%), #EFF6F1;
+  --stage-border:rgba(10,34,22,.10);
+}
+.theme-dark{
+  --win:#0C1310; --fg:#E7EFE9; --t2:#A2B4A9; --t3:#7E918A; --t4:#566A5F;
+  --hair:#1B2620; --hair2:#293830;
+  --fill:#16211B; --fill2:#121A16; --press:#1F2C25; --inset:#0F1613;
+  --line2:#1F2C25; --edge:#2A3A31;
+  --sw-off:#2C3D34; --knob:#DCE8E1;
+  --on:#34D07A; --on-knob:#08130D; --danger:#FF8A80;
+  --stage:radial-gradient(520px 340px at 20% 4%, #10201A, transparent 70%),
+          radial-gradient(460px 320px at 88% 98%, #0A1A13, transparent 72%), #050806;
+  --stage-border:rgba(255,255,255,.08);
+}
+
+header{max-width:1180px; margin:0 auto; padding:44px 24px 0}
+.eyebrow{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); margin:0 0 12px}
+h1{font-size:32px; line-height:1.2; letter-spacing:-.03em; margin:0 0 14px; font-weight:700}
+h1 em{font-style:normal; color:var(--brand)}
+.lede{font-size:13.5px; line-height:1.8; color:var(--ink-2); max-width:880px; margin:0}
+.lede b{color:var(--ink)}
+.meta{display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 0}
+.tag{font-size:11.5px; padding:4px 9px; border-radius:7px; background:rgba(255,255,255,.06);
+     box-shadow:inset 0 0 0 1px var(--line); color:var(--ink-2)}
+.tag.hl{background:rgba(52,208,122,.14); color:#8FE9B6}
+
+main{max-width:1180px; margin:0 auto; padding:0 24px 90px}
+section{margin-top:52px}
+.sec-head{display:flex; align-items:baseline; gap:12px; margin:0 0 8px}
+.sec-head h2{font-size:18px; letter-spacing:-.01em; margin:0; font-weight:650}
+.sec-head span{font-size:11.5px; color:var(--ink-3); font-family:var(--mono)}
+.sec-note{font-size:12.5px; line-height:1.75; color:var(--ink-2); margin:0 0 22px; max-width:920px}
+.sec-note b{color:var(--ink)}
+.sec-note code{color:#A8EBC4; font-size:11.5px}
+
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:26px}
+.grid4{display:grid; grid-template-columns:1fr 1fr; gap:22px}
+@media (max-width:1080px){.grid2,.grid4{grid-template-columns:1fr}}
+.col-head{display:flex; align-items:center; gap:9px; margin:0 0 10px}
+.col-head .dot-h{width:8px; height:8px; border-radius:50%}
+.col-head b{font-size:12px; font-weight:650}
+.col-head i{font-style:normal; font-size:11px; color:var(--ink-3); font-family:var(--mono)}
+
+.stage{padding:24px; border-radius:14px; background:var(--stage); box-shadow:inset 0 0 0 1px var(--stage-border)}
+.panel{width:100%; max-width:480px; background:var(--win); color:var(--fg);
+       font-size:13px; line-height:1; border:1px solid var(--edge);
+       box-shadow:0 14px 34px rgba(4,10,7,.22); user-select:none}
+
+/* 标题栏 */
+.tb{height:36px; display:flex; align-items:center; gap:8px; padding:0 0 0 14px; border-bottom:1px solid var(--line2)}
+.tb .mark{font-size:15px; font-weight:700; letter-spacing:-.02em; line-height:1; color:var(--on); margin-right:2px}
+.tb .grow{flex:1}
+.tb .txtbtn{height:26px; padding:0 9px; border:0; background:transparent; color:var(--fg); font-size:12px; cursor:pointer}
+.tb .txtbtn:hover{background:var(--fill)}
+.tb .ibtn{width:26px; height:26px; display:grid; place-items:center; border:0; background:transparent; color:var(--fg); cursor:pointer}
+.tb .ibtn:hover{background:var(--fill)}
+.tb .ibtn svg{width:15px; height:15px}
+.tb .close{width:34px; height:26px; display:grid; place-items:center; border:0; background:transparent; color:var(--fg); cursor:pointer}
+.tb .close svg{width:11px; height:11px}
+.tb .close:hover{background:#E81123; color:#FFF}
+
+/* 行：14 | 16 | 10 | 名称 | [点槽16] | 版本44 | 6 | 开关36 | 4 | 箭头22 | 10 */
+.row{display:flex; align-items:center; height:40px; padding:0 10px 0 14px;
+     border-bottom:1px solid var(--hair); cursor:pointer}
+.row:hover{background:var(--fill2)}
+.row .fi{width:16px; height:16px; flex:none; color:var(--fg); opacity:.84; margin-right:10px}
+.row .nm{flex:1; min-width:0; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.row .st{width:6px; height:6px; border-radius:50%; flex:none; margin:0 5px}
+.row .st.ok{background:var(--on)}
+.row .st.off{background:var(--t4)}
+.row .st.bad{background:var(--danger)}
+.row .ver{width:44px; flex:none; text-align:right; font-family:var(--mono); font-size:11px;
+          color:var(--t3); margin-right:6px}
+.row.is-off .ver{color:var(--t4)}
+.row.is-bad .ver{color:var(--fg)}
+.row .sw{width:36px; height:18px; flex:none; position:relative; border:0; padding:0; cursor:pointer; background:var(--sw-off)}
+.row .sw::after{content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; background:var(--knob)}
+.row .sw.on{background:var(--on)}
+.row .sw.on::after{left:20px; background:var(--on-knob)}
+.row .more{width:22px; display:grid; place-items:center; color:var(--t4); flex:none; margin-left:4px}
+.row .more svg{width:12px; height:12px}
+
+/* ===== C 案：图标右上角标 ===== */
+/* 图标容器 16×16；角标圆心落在图标框右上顶点内收 1.5px 处 (14.5, 5.5)，
+   直径 7 → left 11 / top 2；外面 1.5px 底色 halo 把图标线条隔开。 */
+.ico-wrap{position:relative; flex:none; width:16px; height:16px; margin-right:10px}
+.ico-wrap .fi{margin-right:0}
+.ico-wrap .bd{position:absolute; left:13px; top:-3px; width:7px; height:7px; border-radius:50%;
+              box-shadow:0 0 0 1.5px var(--win)}
+/* 旧版（会糊）：5px，圆心在图标框内，直接压线条 */
+.ico-wrap .bd-old{position:absolute; left:10px; top:0; width:5px; height:5px; border-radius:50%;
+                  box-shadow:0 0 0 1px var(--win)}
+
+/* 设置页行 */
+.setrow{display:flex; align-items:center; height:36px; padding:0 14px 0 14px;
+        border-bottom:1px solid var(--hair); font-size:13px}
+.setrow .lb{color:var(--fg)}
+.setrow .seg{margin-left:auto; display:flex; background:var(--fill)}
+.setrow .seg button{border:0; padding:3px 8px; font-size:12px; cursor:pointer;
+                    background:transparent; color:var(--t2)}
+.setrow .seg button[aria-pressed="true"]{background:var(--on); color:var(--on-knob)}
+.setgrp{height:24px; display:flex; align-items:flex-end; padding:0 14px 3px;
+        font-size:12px; color:var(--t3)}
+
+/* 放大展示 */
+.zoom-wrap{display:flex; align-items:center; gap:16px; padding:20px 18px; background:var(--win);
+           border:1px solid var(--edge)}
+.zoom-box{position:relative; width:86px; height:86px; flex:none;
+          background:var(--fill2); border:1px dashed var(--hair2)}
+.zoom-box .inner{position:absolute; left:12px; top:20px; width:48px; height:48px;
+                 transform-origin:0 0}
+.zoom-box .inner svg{position:absolute; left:0; top:0; width:16px; height:16px;
+                     color:var(--fg); transform:scale(3); transform-origin:0 0}
+.zoom-box .inner .bd{position:absolute; left:13px; top:-3px; width:7px; height:7px; border-radius:50%;
+                     transform:scale(3); transform-origin:0 0}
+.zoom-box .inner .bd-old{position:absolute; left:10px; top:0; width:5px; height:5px; border-radius:50%;
+                         transform:scale(3); transform-origin:0 0}
+.zoom-cap{font-size:11px; font-family:var(--mono); color:var(--t3); line-height:1.7}
+
+/* 前后对比 */
+.ba{display:grid; grid-template-columns:1fr 1fr; gap:22px}
+@media (max-width:900px){.ba{grid-template-columns:1fr}}
+.ba .card{background:rgba(255,255,255,.03); box-shadow:inset 0 0 0 1px var(--line);
+          border-radius:12px; overflow:hidden}
+.ba .card-head{padding:12px 14px 10px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:9px}
+.ba .card-head b{font-size:13px}
+.ba .card-head span{font-size:11px; font-family:var(--mono); color:var(--ink-3)}
+.ba .card-body{padding:18px}
+.ba .verdict{padding:11px 14px 13px; font-size:11.5px; line-height:1.7; color:var(--ink-2); border-top:1px solid var(--line)}
+.ba .verdict b{color:var(--ink)}
+.bad-card{box-shadow:inset 0 0 0 1px rgba(255,138,128,.32)}
+.bad-card .card-head b{color:#FF9E94}
+.good-card{box-shadow:inset 0 0 0 1px rgba(52,208,122,.38)}
+.good-card .card-head b{color:#8FE9B6}
+
+/* 表格 */
+table{width:100%; border-collapse:collapse; font-size:12.5px; margin-top:4px}
+th,td{text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:middle}
+th{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+td.n{font-family:var(--mono); font-size:11.5px; color:rgba(232,239,234,.80); white-space:nowrap}
+.badge{display:inline-block; width:6px; height:6px; border-radius:50%; vertical-align:1px}
+.warn{color:#FF9E94}
+.ok{color:#8FE9B6}
+.dim{color:var(--ink-3)}
+.chip{display:inline-block; font-family:var(--mono); font-size:11px; padding:1px 6px; border-radius:5px;
+      background:rgba(255,255,255,.07); color:var(--ink-2)}
+footer{max-width:1180px; margin:0 auto; padding:0 24px 40px; font-size:11px; color:var(--ink-3)}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5.2v13.6 M5.2 12h13.6"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5.4 12h13.2"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M6 6l12 12 M18 6L6 18"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5L15 12l-5.5 5.5"/></symbol>
+  <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3.4 11.4L20.6 4L14.2 20L11.2 14.2Z M11.2 14.2L20.6 4"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 5.5H21V18.5H3Z M5.6 14.4H8.8L10.9 9.6L13.4 16.6L15.3 12.4H18.6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 2.6L20.4 6.1v7L12 21.4L3.6 13.1v-7Z M8.4 11.9l2.6 2.6 4.8-5.2"/></symbol>
+  <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.8 7.2h12.4v12.2H2.8Z M2.8 11.4h12.4 M17.6 3.4l4 4 M21.6 3.4l-4 4"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.8 4.8h18.4v11.6H2.8Z M9 20.2h6 M12 16.4v3.8 M6.4 12.6L9 9.6l2.2 2.2 3.2-3.8 3 3.2"/></symbol>
+  <symbol id="i-bin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4.6 6.8h14.8 M9.4 6.8V4.4h5.2v2.4 M6.4 6.8l1 13h9.2l1-13 M10 10.4v6 M14 10.4v6"/></symbol>
+</svg>
+
+<header>
+  <p class="eyebrow">WBOX · 插件状态点 · v1.1.0</p>
+  <h1>同一枚点，<em>两种挂法</em>，交给用户选</h1>
+  <p class="lede">能做到，而且不用两套逻辑。<b>判定只有一套</b>（<code>plugin_dot()</code> 返回 <code>ok / off / bad</code>），
+  呈现拆成三档：<b>行内</b>（A，版本号左侧 6px 点）、<b>角标</b>（C，图标右上角 7px 点）、<b>不显示</b>。
+  配置键 <code>ui_plugin_dot</code>，设置页「外观」组里一行三格，选完即时重建。
+  顺手把 C 案会糊的根因也修了——不是加抗锯齿，是<b>把它搬出图标框</b>。</p>
+  <div class="meta">
+    <span class="tag hl">A / C / 关 三档可选</span>
+    <span class="tag">一套判定，两种挂法</span>
+    <span class="tag">C 案零占宽</span>
+    <span class="tag">复用 sprite 的 4×4 超采样</span>
+    <span class="tag">不新增 token</span>
+  </div>
+</header>
+
+<main>
+
+<section>
+  <div class="sec-head"><h2>四张真机尺寸面板</h2><span>480 × auto · 左 A 右 C</span></div>
+  <p class="sec-note">同一份数据、同一套状态判定，只换挂法。上行是浅色，下行是深色。
+  每张六行里故意留一行关闭（游戏加加联动）、一行异常（桌面监控，守护报过 3 次错）。<br>
+  <b>两案有一处刻意的不同</b>：A 案关闭行仍画一枚 <code>t4</code> 灰点；C 案关闭行<b>不挂角标</b>——
+  灰色角标贴在灰色图标上，7px 也救不回来，而且开关本身已经说清这行是关的。</p>
+
+  <div class="grid4">
+    <div>
+      <div class="col-head"><span class="dot-h" style="background:#0C8040"></span><b>浅色 · A 行内</b><i>ui_plugin_dot = row</i></div>
+      <div class="stage theme-light"><div class="panel" data-plan="a"></div></div>
+    </div>
+    <div>
+      <div class="col-head"><span class="dot-h" style="background:#0C8040"></span><b>浅色 · C 角标</b><i>ui_plugin_dot = badge</i></div>
+      <div class="stage theme-light"><div class="panel" data-plan="c"></div></div>
+    </div>
+  </div>
+
+  <div class="grid4" style="margin-top:22px">
+    <div>
+      <div class="col-head"><span class="dot-h" style="background:#34D07A"></span><b>深色 · A 行内</b><i>ui_plugin_dot = row</i></div>
+      <div class="stage theme-dark"><div class="panel" data-plan="a"></div></div>
+    </div>
+    <div>
+      <div class="col-head"><span class="dot-h" style="background:#34D07A"></span><b>深色 · C 角标</b><i>ui_plugin_dot = badge</i></div>
+      <div class="stage theme-dark"><div class="panel" data-plan="c"></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><h2>C 案为什么会糊，怎么修的</h2><span>3× 放大 · 16px 图标框</span></div>
+  <p class="sec-note">上一版 C 案是 4px 点贴在图标框右上角的<b>里面</b>。三条原因叠在一起，必糊：
+  <b>一是直径只有 4px</b>，1px 底环一扣就剩 2px 实心，肉眼只剩一团灰；
+  <b>二是位置在框内</b>，16px 图标的安全边距只有 2px，点一定压在图标线条上，线条和点互相啃；
+  <b>三是 Tk 的 <code>create_oval</code> 没有抗锯齿</b>，4px 圆在半像素坐标上会被画成阶梯块。
+  修法对应三条：<b>加到 7px</b>、<b>圆心搬到图标框外沿</b>、<b>用项目已有的 <code>sprite.coverage</code> 做 4×4 超采样</b>。<br>
+  第四条是文字修不了的：<b>关闭态不挂角标</b>。图标本身就是灰的（<code>t2</code> × 0.84），
+  再挂一枚 <code>t4</code> 灰点，两者只差一档亮度，任何直径都分不开——这是 C 案只能放弃关闭态标记的原因。</p>
+
+  <div class="ba">
+    <div class="card bad-card">
+      <div class="card-head"><b>旧：4px · 压在框内</b><span>create_oval</span></div>
+      <div class="card-body theme-light">
+        <div class="zoom-wrap">
+          <div class="zoom-box"><div class="inner">
+            <svg><use href="#i-monitor"/></svg>
+            <span class="bd-old" style="background:#B3261E; box-shadow:0 0 0 1px var(--win)"></span>
+          </div></div>
+          <div class="zoom-cap">圆心 (12.5, 2.5)<br>在图标框<b>内</b>，压住线条<br>5px 实心 + 1px 底环<br>实心只剩 3px</div>
+        </div>
+      </div>
+      <div class="verdict"><b>结果：</b>点和图标线条粘在一起，缩放到 125% 时彻底看不清是红点还是红色描边。</div>
+    </div>
+
+    <div class="card good-card">
+      <div class="card-head"><b>新：7px · 搬到框外</b><span>sprite 4×4 SS</span></div>
+      <div class="card-body theme-light">
+        <div class="zoom-wrap">
+          <div class="zoom-box"><div class="inner">
+            <svg><use href="#i-monitor"/></svg>
+            <span class="bd" style="background:#B3261E; box-shadow:0 0 0 1.5px var(--win)"></span>
+          </div></div>
+          <div class="zoom-cap">圆心 (16.5, 0.5)<br>挂在图标框<b>外沿</b><br>7px 实心 + 1.5px 底环<br>外径 10，右突 5.5</div>
+        </div>
+      </div>
+      <div class="verdict"><b>结果：</b>点是点、线是线，底环把两者隔开；圆边 4×4 超采样后是干净的弧度，不是阶梯。</div>
+    </div>
+  </div>
+
+  <p class="sec-note" style="margin-top:24px">几何上要动 <code>Glyph</code> 一处：极简档的 Canvas 从 <code>16×16</code> 变成 <code>22×22</code>，
+  图标本体下移 <code>px(6)</code> 绘制，多出来的右上角空白正好放角标（圆心 <code>(16.5, 6.5)</code>，外径 10）。
+  <b>行内横向一分钱不用改</b>——<code>create_window</code> 左锚点不动，图标视觉左边缘还是 <code>pad_l</code>，
+  角标右突到 <code>21.5</code>，离名称起点 <code>26</code> 还有 4.5px，<code>name_x</code> 原样。<br>
+  <b>垂直要补 3px</b>：图标框在 Canvas 内是 <code>6..22</code>，中心 14 比 Canvas 中心 11 低 3，
+  所以 C 案的 <code>create_window</code> y 写成 <code>rh // 2 - px(3)</code>，图标才回到行中线。</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>用户在哪选</h2><span>设置 → 外观</span></div>
+  <p class="sec-note">新增一行三格，排法和既有的「明暗」「窗口大小」完全一致（同一个 <code>seg_row()</code>，不写新控件）。
+  选中格吃 <code>on</code> 底 + <code>on_knob</code> 字，跟 B 案定下的一致。三档：</p>
+
+  <div class="grid2">
+    <div>
+      <div class="col-head"><span class="dot-h" style="background:#0C8040"></span><b>浅色 · 设置页外观组</b><i>light</i></div>
+      <div class="stage theme-light">
+        <div class="panel">
+          <div class="tb"><span class="mark">WBOX</span><div class="grow"></div>
+            <button class="txtbtn">返回</button><button class="close"><svg><use href="#i-close"/></svg></button></div>
+          <div class="setgrp">外观</div>
+          <div class="setrow"><span class="lb">插件状态点</span>
+            <span class="seg"><button aria-pressed="true">行内</button><button>角标</button><button>不显示</button></span></div>
+          <div class="setrow"><span class="lb">明暗</span>
+            <span class="seg"><button>跟随系统</button><button aria-pressed="true">浅色</button><button>深色</button></span></div>
+          <div class="setrow"><span class="lb">窗口大小</span>
+            <span class="seg"><button aria-pressed="true">小</button><button>中</button><button>大</button></span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="col-head"><span class="dot-h" style="background:#34D07A"></span><b>深色 · 角度标时</b><i>dark</i></div>
+      <div class="stage theme-dark">
+        <div class="panel">
+          <div class="tb"><span class="mark">WBOX</span><div class="grow"></div>
+            <button class="txtbtn">返回</button><button class="close"><svg><use href="#i-close"/></svg></button></div>
+          <div class="setgrp">外观</div>
+          <div class="setrow"><span class="lb">插件状态点</span>
+            <span class="seg"><button>行内</button><button aria-pressed="true">角标</button><button>不显示</button></span></div>
+          <div class="setrow"><span class="lb">明暗</span>
+            <span class="seg"><button>跟随系统</button><button>浅色</button><button aria-pressed="true">深色</button></span></div>
+          <div class="setrow"><span class="lb">窗口大小</span>
+            <span class="seg"><button aria-pressed="true">小</button><button>中</button><button>大</button></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="sec-note" style="margin-top:20px">新装默认 <code>row</code>——多数人不用进这一页；进这一页的人也只需要认三个词。
+  三档的差别只有两个字：<b>点画在哪</b>。
+  判定、取色、异常时版本号提亮，三档完全共用——关掉这一档时只是不画，判定照旧跑，
+  所以随时切回来不会有一帧的错状态。</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>状态口径（三档共用）</h2><span>一套判定</span></div>
+  <p class="sec-note">数据来自加载期 <code>entry.status</code>、守护写的 <code>plugins_state.json</code>
+  （<code>status</code> / <code>error_count</code> / <code>ticks</code>）、开关值、<code>requires_admin</code>。
+  判定顺序沿用 <code>plugin_hint()</code>：加载期状态优先，运行期 <code>degraded</code> / <code>error_count &gt; 0</code> 覆盖。</p>
+  <table>
+    <thead><tr><th style="width:24%">守护 / 加载状态</th><th style="width:13%">点的色</th><th style="width:14%">版本号</th><th>行里还会发生什么</th></tr></thead>
+    <tbody>
+      <tr><td class="n">ok + 开关开</td><td><span class="badge" style="background:#0C8040"></span> on</td><td class="n">t3</td><td>常态</td></tr>
+      <tr><td class="n">ok + 开关关</td><td><span class="badge" style="background:#93A69A"></span> t4</td><td class="n">t4</td><td>整行降噪。<b>A 案</b>画灰点；<b>C 案不挂</b>——灰点贴灰图标分不开</td></tr>
+      <tr><td class="n">degraded / error_count &gt; 0</td><td><span class="badge" style="background:#B3261E"></span> danger</td><td class="n">fg</td><td>展开行补错误摘要</td></tr>
+      <tr><td class="n">load_failed · bad_manifest<br>too_new · conflict</td><td class="dim">—</td><td class="dim">—</td><td>这类插件<b>本来就不进列表</b>（<code>entries</code> 只收 <code>STATUS_OK</code>），
+        它们在「设置 → 插件」组里有整行说明</td></tr>
+      <tr><td class="n">requires_admin 且未提权</td><td><span class="badge" style="background:#0C8040"></span> on</td><td class="n">t3</td><td>点仍是绿（它没坏），展开行顶部写「需要管理员」</td></tr>
+    </tbody>
+  </table>
+  <p class="sec-note" style="margin-top:18px"><b>红点的例外仍然成立</b>：极简的铁律是 <code>danger</code> 只给破坏性操作，
+  这里破例给「运行异常」，因为它是数据状态而非装饰，且同时把版本号提到 <code>fg</code>——不只靠颜色区分。
+  A / C 两档都一样：不想出现红，就换 <code>fg</code> 实心点，改一处取色。</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>宽度账</h2><span>480 宽 · row_w 480</span></div>
+  <p class="sec-note">A 和 C 的差别在这一张表里就看清了：A 从名称列借 10px，C 一分不借。</p>
+  <table>
+    <thead><tr><th style="width:26%">列</th><th>A · 行内</th><th>C · 角标</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>名称（弹性）</td><td class="n">310 → 300</td><td class="n">310 → 310</td><td>A 减 10；C 的角标右突 5.5px，吃进 <code>gap 10</code>，名称净空仍有 4.5px</td></tr>
+      <tr><td>点 / 角标占位</td><td class="n">16（5+6+5）</td><td class="n">0</td><td>C 的角标画在图标 Canvas 外扩区，不进 flex 宽度</td></tr>
+      <tr><td>版本槽</td><td class="n">44 + 6</td><td class="n">44 + 6</td><td>不动</td></tr>
+      <tr><td>开关 / 箭头 / 右 padding</td><td class="n">36 / 22 / 10</td><td class="n">36 / 22 / 10</td><td>不动，纵向对齐靠这组右对齐锚点</td></tr>
+      <tr><td>图标 Canvas</td><td class="n">16 × 16</td><td class="n">22 × 22</td><td>C 外扩 6px 只为放角标，左锚点不变</td></tr>
+    </tbody>
+  </table>
+  <p class="sec-note" style="margin-top:16px">「关机清理回收站」7 字约 91px：A 档名称 300 余 200+，C 档 310 余 210+，两档都不会截断。</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>落地要动的地方</h2><span>4 个文件</span></div>
+  <table>
+    <thead><tr><th style="width:28%">改哪</th><th>怎么改</th></tr></thead>
+    <tbody>
+      <tr><td class="n">panel_state.py</td><td>加 <code>plugin_dot_from_cfg(cfg)</code>，三档 <code>row / badge / off</code>，坏值回落 <code>row</code>——和 <code>ui_size_from_cfg()</code> 同一套写法</td></tr>
+      <tr><td class="n">settings_gui.py · 外观组</td><td>一行 <code>seg_row('插件状态点', (('row','行内'),('badge','角标'),('off','不显示')), self.plugin_dot, self.set_plugin_dot)</code>；<code>save_appearance()</code> 落 <code>ui_plugin_dot</code></td></tr>
+      <tr><td class="n">ui_widgets.py · Glyph</td><td>加 <code>badge</code> 参数：<code>Canvas</code> 尺寸 <code>s + px(6)</code>，图标下移 <code>px(6)</code>；角标用 <code>sprite.coverage</code> + <code>sprite()</code> 画 10×10 两层（halo 用 <code>self.bg</code>、实心用状态色），<code>set_bg()</code> 重绘时自动跟着 hover 换色</td></tr>
+      <tr><td class="n">settings_gui.py · make_row</td><td>按 <code>self.plugin_dot</code> 分三支：<code>row</code> 插 6px 点（<code>name_w − 10</code>）；<code>badge</code> 给 <code>Glyph</code> 传 <code>badge=状态色</code>（<code>name_w</code> 不动、<code>create_window</code> y 减 <code>px(3)</code>、关闭态传 <code>None</code>）；<code>off</code> 两支都不画、<code>name_w</code> 回到满格</td></tr>
+      <tr><td class="n">顺手：A 的点也走光栅</td><td>6px 点在 <code>create_oval</code> 下同样有 1px 阶梯（Tk 矢量图元无抗锯齿）。落地时 A 案那枚点也调 <code>sprite.coverage</code> 画，和 C 案共用同一份覆盖率缓存，两档观感统一</td></tr>
+    </tbody>
+  </table>
+  <p class="sec-note" style="margin-top:20px">没列进来的都不动：判定函数、版本号取色、状态口径、token、玻璃档（玻璃档行尾已有齿轮入口，这枚点只做极简档）。</p>
+</section>
+
+</main>
+
+<footer>WBOX · 插件状态点 v1.1.0 · A/C 共存预览 · 几何取自 src/settings_gui.py make_row()，抗锯齿方案取自 src/sprite.py coverage()</footer>
+
+<script>
+const ROWS = [
+  {ico:'i-plane', nm:'小飞机联动', ver:'v2.2.0', on:true, st:'ok'},
+  {ico:'i-pulse', nm:'游戏加加联动', ver:'v1.2.0', on:false, st:'off'},
+  {ico:'i-shield', nm:'ACE 防护', ver:'v2.2.0', on:true, st:'ok'},
+  {ico:'i-block', nm:'弹窗拦截', ver:'v2.1.0', on:true, st:'ok'},
+  {ico:'i-monitor', nm:'桌面监控', ver:'v1.7.0', on:true, st:'bad'},
+  {ico:'i-bin', nm:'关机清理回收站', ver:'v1.1.2', on:true, st:'ok'}
+];
+
+function svg(id, cls){ return '<svg class="' + (cls||'') + '"><use href="#' + id + '"/></svg>'; }
+
+function tb(){
+  return '<div class="tb"><span class="mark">WBOX</span><div class="grow"></div>' +
+    '<button class="txtbtn">设置</button><button class="ibtn">' + svg('i-plus') + '</button>' +
+    '<button class="ibtn">' + svg('i-min') + '</button>' +
+    '<button class="close">' + svg('i-close') + '</button></div>';
+}
+
+function colorOf(st){
+  return st === 'ok' ? 'var(--on)' : (st === 'bad' ? 'var(--danger)' : 'var(--t4)');
+}
+
+function rowHTML(r, plan){
+  var dotInRow = plan === 'a' ? '<span class="st ' + r.st + '"></span>' : '';
+  var badge = (plan === 'c' && r.st !== 'off')
+    ? '<span class="bd" style="background:' + colorOf(r.st) + '"></span>' : '';
+  var icon = plan === 'c'
+    ? '<span class="ico-wrap">' + svg(r.ico,'fi') + badge + '</span>'
+    : svg(r.ico,'fi');
+  return '<div class="row' + (r.on ? '' : ' is-off') + (r.st === 'bad' ? ' is-bad' : '') + '">' +
+    icon +
+    '<span class="nm">' + r.nm + '</span>' + dotInRow +
+    '<span class="ver">' + r.ver + '</span>' +
+    '<button class="sw ' + (r.on ? 'on' : '') + '" aria-checked="' + r.on + '"></button>' +
+    '<span class="more">' + svg('i-chev-r') + '</span></div>';
+}
+
+document.querySelectorAll('.panel[data-plan]').forEach(function(el){
+  const plan = el.dataset.plan;
+  el.innerHTML = tb() + ROWS.map(function(r){ return rowHTML(r, plan); }).join('');
+});
+</script>
+</body>
+</html>

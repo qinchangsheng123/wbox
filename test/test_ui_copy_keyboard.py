@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """文案红线与键盘可达回归（v2.9.0 任务 9 永久化）：动词按钮 / 安全焦点 /
 Esc/Enter/Tab / 停止守护二次确认 / 失败人话 / 卸载标题带对象 / 覆盖与坏包 /
-主窗口与菜单 Tab 链 / 置灰必配解释 / 皮肤面板键盘。
+主窗口与设置页 Tab 链 / 置灰必配解释 / 皮肤面板键盘。
 
 全局桩（os.startfile、start_guard、plugin_package.*、filedialog）一律
 try/finally 还原——单进程顺序跑时这些模块是共享的，不还原会带偏后跑的测试。
@@ -310,19 +310,19 @@ try:
     app.probe = True
 
     # ---------------- [7] 键盘：主窗口 Tab 链 + 焦点环 ----------------
-    print('[7] 键盘：Tab 链 ＋→字标→开关→行尾，焦点环可见且不被 hover 盖掉')
+    print('[7] 键盘：Tab 链 ＋→设置→开关→行尾，焦点环可见且不被 hover 盖掉')
     chain = getattr(root, '_focus_chain', [])
     sws = list(app.switches.values())
     gears = list(app.plugin_gears.values())
-    check(chain[:2] == [app.add_wrap, app.brand_wrap],
-          'Tab 链前两枚 = ＋ / 字标')
+    check(chain[:2] == [app.add_wrap, app.pane_btn],
+          'Tab 链前两枚 = ＋ / 设置')
     check(chain[2:2 + len(sws)] == sws and chain[2 + len(sws):] == gears,
           'Tab 链随后 = 各行开关 → 各行行尾')
     chain[0].focus_set()
     root.update()
     root.event_generate('<Tab>')
     root.update()
-    check(root.focus_get() is chain[1], 'Tab 从＋走到字标')
+    check(root.focus_get() is chain[1], 'Tab 从＋走到设置')
     root.event_generate('<Shift-Tab>')
     root.update()
     check(root.focus_get() is chain[0], 'Shift+Tab 走回＋')
@@ -347,32 +347,39 @@ try:
     root.update()
     check(sw.value == before, 'Space 再拨回来')
 
-    # ---------------- [8] 菜单：首项焦点 / Esc 回字标 / 链 ----------------
-    print('[8] 菜单：打开焦点入首项，Esc 收起且焦点回字标')
-    app.open_settings()
+    # ---------------- [8] 设置页：焦点链 / 返回入口 ----------------
+    print('[8] 设置页：Tab 链覆盖可操作行，「←」回列表页')
+    app.toggle_pane()
     root.update()
-    mchain = getattr(app.settings_win, '_focus_chain', [])
-    check(len(mchain) >= 10, '菜单 Tab 链覆盖全部可操作行（%d）' % len(mchain))
-    check(app.settings_win.focus_get() is mchain[0], '菜单打开焦点在首项')
-    app.settings_win.event_generate('<Escape>')
+    mchain = list(getattr(app, '_set_focusables', []))
+    check(len(mchain) >= 10, '设置页 Tab 链覆盖可操作行（%d）' % len(mchain))
+    check(root.focus_get() is not None, '进设置页后焦点非空')
+    back = app.pane_btn
+    back.event_generate('<ButtonRelease-1>', x=4, y=4)
     root.update()
-    check(app.settings_win is None, 'Esc 收起菜单')
-    check(root.focus_get() is app.brand_wrap, 'Esc 后焦点还给字标')
+    check(app.pane == 'list', '「←」回列表页')
+    check(root.focus_get() is not None, '返回后焦点没有被清掉')
 
     # ---------------- [9] 置灰必配解释 ----------------
-    print('[9] 只读态：状态行两行说明，置灰开关不进 Tab 链')
+    print('[9] 只读态：置灰开关不进 Tab 链，浮层底部写明原因')
+    # v2.18.0：原来的两行解释挂在齿轮菜单状态行里，菜单删掉后解释文字
+    # 落在每插件设置浮层底部；这里改成到那个真实位置去核对。
     app.readonly = True
-    app.open_settings()
+    app.rebuild()
     root.update()
-    texts = labels(app.settings_inner)
-    check(any('需要管理员权限' in t for t in texts), '状态行写明为什么灰')
-    check(any('以管理员身份重新打开后即可修改' in t for t in texts),
-          '第二行给怎么办')
-    boot = app.switches.get('boot')
-    check(boot is not None and str(boot.cget('takefocus')) in ('0', 'False'),
-          '置灰开关不可 Tab 聚焦')
-    app.close_settings()
+    check(all(not sw.enabled and str(sw.cget('takefocus')) in ('0', 'False')
+              for sw in app.switches.values()),
+          '只读态所有功能开关置灰且不可 Tab 聚焦')
+    was_probe = app.probe
+    app.probe = False        # 让设置浮层真建出来（alpha=0 仍不显示）
+    app.on_plugin_settings(app.entries[0])
+    root.update()
+    check(any('需要管理员权限' in t for t in labels(app.plugin_body)),
+          '设置浮层底部写明为什么灰')
+    app.close_plugin_settings()
+    app.probe = was_probe
     app.readonly = False
+    app.rebuild()
     root.update()
 
     # ---------------- [10] 皮肤面板键盘 ----------------
@@ -387,8 +394,8 @@ try:
     check(app.skin_win.focus_get() is schain[0], '卡片可聚焦')
     app.skin_win.event_generate('<Escape>')
     root.update()
-    check(app.skin_win is None and root.focus_get() is app.brand_wrap,
-          'Esc 收皮肤面板且焦点回字标')
+    check(app.skin_win is None and root.focus_get() is app.pane_btn,
+          'Esc 收皮肤面板且焦点回「设置」入口')
 finally:
     sg.start_guard = ORIG['start_guard']
     os.startfile = ORIG['startfile']

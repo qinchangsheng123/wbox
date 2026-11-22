@@ -88,7 +88,6 @@ def new_app():
 
 def drop(root, app):
     app.close_plugin_settings()
-    app.close_settings()
     app.close_skin_settings()
     root.destroy()
 

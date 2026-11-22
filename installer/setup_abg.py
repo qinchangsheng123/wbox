@@ -810,7 +810,7 @@ def _icon_prims(kind, w, h, hw):
 
 
 def gui(default_dir, task, no_task=False, selftest=False, log_path=None):
-    """WBOX 安装器：与设置面板同一套极简语言（v2.11.0 起不再用液态玻璃）。
+    """WBOX 安装器：与设置面板同一套极简语言（方角、纯色、零位图）。
 
     一窗四态：首屏 / 安装中 / 完成 / 失败。标题栏恒定、只切中部，避免跳版。
     安装在后台线程跑，主线程 80ms 轮询进度事件，窗口不冻结；安装中禁止关闭。
@@ -848,7 +848,8 @@ def gui(default_dir, task, no_task=False, selftest=False, log_path=None):
     def px(v):
         return max(1, int(round(v * scale)))
 
-    # 色板与面板同一来源（src/skins.py plain 档 token），明暗跟随系统应用主题。
+    # 色板与面板同一来源（src/skins.py 默认档 token），明暗跟随系统应用主题。
+    # 窗口底色取 token `glass`（名字是历史遗留，语义就是窗口底）。
     appearance = skins.detect_appearance()
     skin = skins.get(skins.DEFAULT_ID) or skins.builtin_skins()[-1]
     tok = skin.tokens(appearance)

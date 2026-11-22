@@ -42,5 +42,9 @@ test/*.bmp
 
 # 历史发版产物 / 设计过程截图（体积大、含本机数据，不进仓库）
 releases/
+release/
 design/shots/
 src/games_cache.json
+
+# 本地实验目录（Rust 进程识别验证，含 128 MB 构建产物）
+rust/

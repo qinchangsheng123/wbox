@@ -50,6 +50,10 @@ SKIP_NAMES = {'guard.log', 'guard.log.1', 'guard.pid', 'stop.flag',
               'rescan_games.flag', 'ace_state.json', 'games_cache.json',
               # 面板保存时生成的上一版配置备份，含用户旧参数，不该分发给别的机器。
               'config.json.bak', 'config.json.bak.1',
+              # v2.15.0：build_exe.bat 构建期间暂存的生产活配置（构建收尾会
+              # 合并回 config.json 并删除）。正常流程下打包时它已不存在；列在这里
+              # 是防呆——中途失败留下的残件绝不能带本机路径进 payload。
+              'config.json.live',
               # 运行期状态，属于"这一台机器上的这个守护"：装到新机器必须从空开始，
               # 带上旧状态会让面板显示上一台机器的异常次数 / pid。
               'plugins_state.json',

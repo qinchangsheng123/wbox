@@ -72,6 +72,29 @@ def ui_size_from_cfg(cfg=None):
     return key if key in UI_SIZE_ZOOM else DEFAULT_UI_SIZE
 
 
+# 插件状态点的三种挂法（v2.15.0）：
+#   row   行内——版本号左侧一枚点，六行排成一条竖线
+#   badge 角标——图标右上角，不占行尾宽度
+#   off   不显示——判定照旧跑，只是不画
+PLUGIN_DOT_MODES = ('row', 'badge', 'off')
+DEFAULT_PLUGIN_DOT = 'row'
+
+
+def plugin_dot_from_cfg(cfg=None):
+    """配置里的 ui_plugin_dot -> 三档之一，坏值/缺键回落默认「行内」。
+
+    和 ui_size_from_cfg() 同一套口径：外观是纯展示偏好，读不到就当默认，
+    绝不因为一个坏键拦住面板启动。
+    """
+    if not isinstance(cfg, dict):
+        try:
+            cfg = load_cfg()
+        except Exception:
+            cfg = {}
+    key = str(cfg.get('ui_plugin_dot') or '').strip().lower()
+    return key if key in PLUGIN_DOT_MODES else DEFAULT_PLUGIN_DOT
+
+
 
 # ---- 三段合并 / 点路径 / 开关读写 ----
 def load_config_raw():
@@ -222,7 +245,19 @@ SESSION_TEXT = {
 }
 
 
-def short_guard_state(probe=False):
+def guard_running(st=None):
+    """心跳连得上就算活着——和短状态同一口径，只回答是/否。
+
+    设置页的启停按钮要判断该显示「启动」还是「停止」，别再各写一份判断：
+    两处口径一旦分叉，就会出现「状态说没运行、按钮却让你停止」。
+    st 由调用方传入时不再重复连管道（一次刷新只读一次心跳）。
+    """
+    if st is None:
+        st = guard_beat.read_status()
+    return isinstance(st, dict) and bool(st.get('pid'))
+
+
+def short_guard_state(probe=False, st=None):
     """菜单右侧只放两三个字的状态提示，长 pid 不挤占名称列。
 
     v2.5.0 起状态来源是守护的心跳管道（连得上 = 真活着，比 guard.pid 文件
@@ -232,10 +267,14 @@ def short_guard_state(probe=False):
     v2.11.3：心跳里带进程事件通道状态。事件不可用时不是「守护坏了」，
     但优化确实没生效，所以状态行追加「轮询兜底」——"进程在"和"全功能在"
     必须能一眼分开（旧版守护没有该字段，按老文案显示，不误报降级）。
+
+    v2.16.0：st 可由调用方传入。设置页一次刷新要问三件事（状态/诊断/启停），
+    每件各连一次管道就是三次 400 ms 预算，白白拖慢页面响应。
     """
     if probe:
         return '（自检）'
-    st = guard_beat.read_status()
+    if st is None:
+        st = guard_beat.read_status()
     if isinstance(st, dict) and st.get('pid'):
         parts = ['运行中']
         text = SESSION_TEXT.get(str(st.get('session') or ''), '')
@@ -290,21 +329,80 @@ def guard_diagnostics(st=None):
     return ev_text, p_text, note
 
 
+def guard_snapshot(probe=False):
+    """一次读心跳，交出设置页要的全部答案（v2.16.0）。
+
+    字段：running（启停按钮用）/ state（状态行）/ events、plugins、note
+    （诊断两行 + 补充说明）。设置页每 2 秒刷一次，只连一次管道。
+    """
+    st = guard_beat.read_status()
+    ev, pl, note = guard_diagnostics(st)
+    return {'running': guard_running(st),
+            'state': short_guard_state(probe, st),
+            'events': ev, 'plugins': pl, 'note': note}
+
+
 def autostart_state():
+    """「开机自动启动」是否生效：任务本身和触发器都要启用才算。
+
+    v2.16.0 起开机自启只切触发器（见 set_autostart 的原因），任务始终保持
+    启用；但老版本是用 Disable-ScheduledTask 禁整个任务的，所以两处都看，
+    任一被禁用就回答"没开"，不能让界面上的开关与实际行为不一致。
+    """
     try:
-        rc, out = ps_run("(Get-ScheduledTask -TaskName '%s').Settings.Enabled" % TASK)
-        return rc == 0 and out.strip().lower() == 'true'
+        rc, out = ps_run(
+            "$t=Get-ScheduledTask -TaskName '%s'; "
+            "if ($t.Settings.Enabled -and ($t.Triggers | Where-Object {$_.Enabled})) "
+            "{ 'on' } else { 'off' }" % TASK)
+        return rc == 0 and out.strip().lower().endswith('on')
     except Exception:
         return False
 
 
 def set_autostart(on):
-    verb = 'Enable-ScheduledTask' if on else 'Disable-ScheduledTask'
-    return ps_run("%s -TaskName '%s'" % (verb, TASK))
+    """开/关「开机自动启动」。
+
+    v2.16.0 修根因：原来直接 Enable/Disable-ScheduledTask 整个任务，代价是
+    禁用后连**手动启动**也一起失效——Start-ScheduledTask 报 0x80041326
+    「任务已禁用」。于是用户关掉开机自启、某天发现守护没在跑，点「启动守护」
+    只会失败，而错因藏在 HRESULT 里，面板只能提示"可以重试"。
+    现在只切触发器：任务始终可用（一键启动随时有效），开机跑不跑由触发器决定。
+    """
+    flag = 'true' if on else 'false'
+    return ps_run(
+        "$t=Get-ScheduledTask -TaskName '%s'; "
+        "if (-not $t.Settings.Enabled) { Enable-ScheduledTask -TaskName '%s' | Out-Null }; "
+        "$t=Get-ScheduledTask -TaskName '%s'; "
+        "$t.Triggers | ForEach-Object { $_.Enabled = $%s }; "
+        "Set-ScheduledTask -TaskName '%s' -Trigger $t.Triggers | Out-Null"
+        % (TASK, TASK, TASK, flag, TASK))
 
 
 def start_guard():
-    return ps_run("Start-ScheduledTask -TaskName '%s'" % TASK)
+    """立刻启动守护。返回 (rc, 输出)，rc=0 才算发出去了。
+
+    v2.16.0：任务被禁用时先启用再启动。禁用只可能是老版本"关掉开机自启"
+    留下的状态，不代表用户此刻不想让它跑；启用后顺手把触发器关掉，保持
+    用户「开机不自启」的原意（手动启动与触发器无关）。
+    """
+    rc, out = ps_run("Start-ScheduledTask -TaskName '%s'" % TASK)
+    if rc == 0:
+        return rc, out
+    # 0x80041326 = SCHED_E_TASK_DISABLED；不靠本地化文案判断（ps_run 里中文
+    # 输出可能已经是替换字符，认不出来）。
+    if '0x80041326' not in out and 'disabled' not in out.lower():
+        return rc, out
+    rc2, out2 = ps_run(
+        "$t=Get-ScheduledTask -TaskName '%s'; "
+        "Enable-ScheduledTask -TaskName '%s' | Out-Null; "
+        "$t=Get-ScheduledTask -TaskName '%s'; "
+        "$t.Triggers | ForEach-Object { $_.Enabled = $false }; "
+        "Set-ScheduledTask -TaskName '%s' -Trigger $t.Triggers | Out-Null; "
+        "Start-ScheduledTask -TaskName '%s'"
+        % (TASK, TASK, TASK, TASK, TASK))
+    if rc2 == 0:
+        return 0, '任务原先被禁用，已启用后启动'
+    return rc2, out2
 
 
 def pick_family(root):

@@ -78,8 +78,11 @@ def main():
 
         raw = copy.deepcopy(raw_real)
         ids = [e.id for e in host.registry]
-        step(ids == ['afterburner', 'gamepp', 'ace', 'popup', 'desktop_hud'],
-             '注册表按 (order, id) 加载出五个内置插件：%r' % (ids,))
+        # 前五个的顺序由 (order, id) 固定；shutdown_bin 是后加的内置插件，
+        # 断言用「顺序前缀 + 包含」而不是全等，新增内置插件不该让这条挂掉。
+        step(ids[:5] == ['afterburner', 'gamepp', 'ace', 'popup',
+                         'desktop_hud'] and 'shutdown_bin' in ids,
+             '注册表按 (order, id) 加载出内置插件：%r' % (ids,))
 
         # ---------------- [1] 合并后原值不变 ----------------
         merged = plugin_host.merge_defaults(core_defaults.DEFAULTS,

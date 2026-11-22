@@ -88,16 +88,18 @@ try:
           '面板完成首次 map')
     check(bits_ok(), 'wrapper 风格位 +APPWINDOW -TOOLWINDOW（ex=%08x）'
           % exstyle(sg.win_hwnd(root)))
-    # 焦点/Esc 交叉回归：init 的补位刷新会清焦点，focus_force 回填后
-    # open_settings 的 focus_set 才落得住（非前景进程也成立）。
-    app.open_settings()
+    # 焦点交叉回归：init 的补位刷新会清焦点，focus_force 回填后
+    # 同窗换页的焦点链才落得住（非前景进程也成立）。
+    app.toggle_pane()
     root.update()
     check(root.focus_get() is not None,
-          '菜单打开焦点落在首项（补位刷新后 focus_force 回填）')
-    app.settings_win.event_generate('<Escape>')
+          '进设置页后焦点非空（补位刷新后 focus_force 回填）')
+    chain = list(getattr(app, '_set_focusables', []))
+    check(len(chain) >= 8, '设置页焦点链覆盖可操作行（%d）' % len(chain))
+    back = app.pane_btn
+    back.event_generate('<ButtonRelease-1>', x=4, y=4)
     root.update()
-    check(not (app.settings_win and app.settings_win.winfo_exists()),
-          'Esc 收起菜单（键事件不因焦点 None 被丢弃）')
+    check(app.pane == 'list', '「←」回列表页（设置页不用 Esc 收起）')
     # 诱导一次「wrapper 被重置回 TOOLWINDOW」（Tk 重建 wrapper 时的历史坑）：
     # 手动加回 TOOL 再 withdraw/deiconify（手动循环 +1/+1），<Map> 钩子应修位
     # 并 hide/show 刷新一次（钩子刷新再 +1/+1），且焦点不被刷新清掉。
