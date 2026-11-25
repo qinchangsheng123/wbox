@@ -236,6 +236,33 @@ def main():
              and proc_events.describe_hr(0) == '',
              '未知码照实写；0 不产出噪音')
 
+        # v2.18.2：WMI 的 Next 正常超时是 WBEM_S_TIMEDOUT=0x00040004（非错误）。
+        # 旧常量 0x00040001 是 WBEM_S_ALREADY_EXISTS，曾把超时误判为订阅断线。
+        step(proc_events.WBEM_S_TIMEDOUT == 0x00040004
+             and '超时' in proc_events.describe_hr(0x00040004),
+             'WMI 超时常量按微软定义 0x00040004，且提示为非错误')
+        w3 = proc_events.ProcEventWatcher(lambda: {'cmd.exe'},
+                                          proc_events.make_wake_event())
+        w3._mark('start', True, '')
+        w3._mark('stop', True, '')
+        orig_call, orig_release = proc_events._com_call, proc_events._release
+        hits = []
+
+        def fake_next(*a, **k):
+            hits.append(1)
+            if len(hits) >= 2:
+                w3._stop.set()
+            return 0x00040004
+
+        proc_events._com_call = fake_next
+        proc_events._release = lambda p: None
+        try:
+            w3._consume('start', object())
+        finally:
+            proc_events._com_call, proc_events._release = orig_call, orig_release
+        step(w3.ok and w3.status()['mode'] == 'event' and len(hits) >= 2,
+             'Next 返回 0x00040004 不降级、不重建订阅（%d 轮）' % len(hits))
+
         wlogs = []
         w = proc_events.ProcEventWatcher(lambda: {'cmd.exe'},
                                          proc_events.make_wake_event(),

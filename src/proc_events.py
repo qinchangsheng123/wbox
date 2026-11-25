@@ -42,7 +42,10 @@ import time
 COINIT_MULTITHREADED = 0x0
 RPC_E_TOO_LATE = 0x80010119
 WBEM_S_NO_ERROR = 0
-WBEM_S_TIMEDOUT = 0x00040001
+# v2.18.2 修正：微软 MS-WMI 定义 WBEM_S_TIMEDOUT = 0x00040004（非错误状态）。
+# 旧值 0x00040001 是 WBEM_S_ALREADY_EXISTS，导致每次正常超时都被 _consume
+# 当成硬错误，订阅反复重建、面板误报「进程事件监听不可用」。
+WBEM_S_TIMEDOUT = 0x00040004
 WBEM_S_FALSE = 1
 WBEM_E_ACCESS_DENIED = 0x80041003
 VT_BSTR = 8
@@ -71,6 +74,17 @@ IDX_OBJ_GET = 4                 # IWbemClassObject（GetQualifierSet=3, Get=4）
 IDX_EXEC_NOTIFICATION_QUERY = 22  # IWbemServices
 EXEC_FLAGS = 0x30               # RETURN_IMMEDIATELY | FORWARD_ONLY
 
+# v2.11.4：COM 方法返回的 HRESULT 必须用 c_long/c_ulong 接。
+# ctypes.HRESULT 作 restype 时，失败码会被 ctypes 自动转成 OSError 抛出——
+# 于是 _consume 里 `hr == WBEM_S_TIMEDOUT` / `hard_errors` / SUB_ERROR_LIMIT
+# 这一整套"订阅被踢就重建"的判断永远走不到；OSError 冒泡到 _run 外层 except
+# 直接结束线程，退避重连也一起失效。改用整数 restype 后失败码以返回值拿到，
+# 上述自愈路径全部复活。Release 返回 ULONG 引用计数，也用 c_ulong 接。
+_HRESULT = ctypes.c_long
+_ULONG = ctypes.c_ulong
+# 明确的 RPC/COM 断连码：命中即无等待重建订阅（不必凑满 SUB_ERROR_LIMIT）。
+_DISCONNECT_HRS = frozenset((0x800706BA, 0x800706BE, 0x80010108, 0x80041032))
+
 # 重订阅退避：60s 起、翻倍到 600s 封顶。WMI 服务被停一下、开机早期 RPC 未就绪
 # 都能自动恢复；守护不需要为了"事件通道"重启（重启会丢会话状态）。
 RETRY_MIN_SEC = 60.0
@@ -80,6 +94,7 @@ SUB_ERROR_LIMIT = 3
 
 # HRESULT -> 一句人话。诊断日志与面板降级说明都用它，避免让人去查错误码。
 HR_HINTS = {
+    0x00040004: 'WMI 调用超时（非错误，继续等待）',
     0x80041001: 'WMI 调用失败（WBEM_E_FAILED）',
     0x80041003: '拒绝访问：当前进程权限不够，需要以管理员身份运行',
     0x8004100E: 'WMI 命名空间无效：WMI 仓库可能损坏（可运行 winmgmt /verifyrepository）',
@@ -192,9 +207,17 @@ def _com_call(iface, index, restype, argtypes, args):
 
 
 def _release(iface):
+    """Release 一个 COM 接口；用 c_ulong 接引用计数（不是 HRESULT）。
+
+    v2.11.4：旧代码用 ctypes.HRESULT 作 restype，配合 oledll/vtable 调用时，
+    失效 proxy 上的 Release 会抛原生 SEH（0x800706ba = RPC_S_SERVER_UNAVAILABLE），
+    faulthandler 因此反复打印全栈。这里做成永不外抛：SEH 无法用 except Exception
+    捕获，真正 remedy 是不对失效 proxy 调 Release（见 ProcEventWatcher._run 的
+    stale 标记）；本函数只兜住 Python 层的异常。
+    """
     if iface:
         try:
-            _com_call(iface, IDX_RELEASE, ctypes.HRESULT, (), ())
+            _com_call(iface, IDX_RELEASE, _ULONG, (), ())
         except Exception:
             pass
 
@@ -259,7 +282,9 @@ class ProcEventWatcher(object):
         self._kinds_ok = {}
         self._stop = threading.Event()
         self._threads = []
-        self._note_at = 0.0
+        # v2.11.4：两条 watcher 线程（start/stop）共用实例，日志抑制时间戳必须
+        # 按 kind 分开，否则一条线程失败会刷新时间戳、吃掉另一条的失败日志。
+        self._note_at = {}
         # 每条订阅的诊断快照：{ok, hr, stage, reason, at}。status() / 心跳都用它，
         # 面板因此能说"进程事件不可用，当前使用轮询"而不是只有一个"运行中"。
         self.diag = {}
@@ -271,6 +296,14 @@ class ProcEventWatcher(object):
 
     # ---- 生命周期 ----
     def start(self):
+        # v2.11.4：CoInitializeSecurity 是进程级一次调用，必须在任何工作线程
+        # 启动前由主线程完成。旧代码放在 _subscribe 里、由两条线程各自调用，
+        # 首次存在并发窗口（靠 RPC_E_TOO_LATE 容忍，但不是设计本意）。
+        try:
+            _init_security()
+        except OSError as e:
+            self.log('[proc-events] CoInitializeSecurity 失败：%r（订阅线程继续尝试）'
+                     % (e,))
         for kind in ('start', 'stop'):
             t = threading.Thread(target=self._run, args=(kind,),
                                  name='proc-ev-%s' % kind)
@@ -307,9 +340,9 @@ class ProcEventWatcher(object):
             return
         same = (prev.get('ok') is False and prev.get('hr') == hr
                 and prev.get('stage') == (stage or ''))
-        if same and now - self._note_at < 60.0:
+        if same and now - self._note_at.get(kind, 0.0) < 60.0:
             return
-        self._note_at = now
+        self._note_at[kind] = now
         hint = describe_hr(hr)
         self.log('[proc-events] %s 订阅不可用（%s%s）：%s；%s主循环回落纯轮询'
                  % (kind, stage or 'subscribe',
@@ -385,7 +418,7 @@ class ProcEventWatcher(object):
             locator = out
             b_ns = _bstr('ROOT\\CIMV2')
             svcs = ctypes.c_void_p()
-            hr = _com_call(locator, IDX_CONNECT_SERVER, ctypes.HRESULT,
+            hr = _com_call(locator, IDX_CONNECT_SERVER, _HRESULT,
                            _CONNECT_ARGS,
                            (b_ns, None, None, 0, 0, None, None,
                             ctypes.byref(svcs)))
@@ -403,7 +436,7 @@ class ProcEventWatcher(object):
             b_lang = _bstr('WQL')
             b_query = _bstr(START_QUERY if kind == 'start' else STOP_QUERY)
             penum = ctypes.c_void_p()
-            hr = _com_call(services, IDX_EXEC_NOTIFICATION_QUERY, ctypes.HRESULT,
+            hr = _com_call(services, IDX_EXEC_NOTIFICATION_QUERY, _HRESULT,
                            _EXECQ_ARGS,
                            (b_lang, b_query, EXEC_FLAGS, None, ctypes.byref(penum)))
             _check_hr(hr, 'ExecNotificationQuery', 'ExecNotificationQuery')
@@ -437,6 +470,7 @@ class ProcEventWatcher(object):
         try:
             while not self._stop.is_set():
                 services = enum = None
+                stale = False   # v2.11.4: proxy 已被 WMI 踢断 -> 禁止 Release
                 try:
                     try:
                         services, enum = self._subscribe(kind)
@@ -452,14 +486,29 @@ class ProcEventWatcher(object):
                         continue
                     self._mark(kind, True, '')
                     backoff = RETRY_MIN_SEC
-                    if self._consume(kind, enum) == 'stop':
+                    result = self._consume(kind, enum)
+                    if result == 'stop':
                         return
+                    # result == 'resub'：WMI 枚举器/服务已断连。失效 proxy 上
+                    # 再调 Release 会触发 0x800706ba 原生 SEH（faulthandler 反复
+                    # 全栈的根因），标记 stale 让 finally 跳过——断连 proxy 的
+                    # 引用计数已无意义，OS 会随线程/进程回收其 RPC 通道。
+                    stale = True
                     self.resubscribes += 1
+                    self._mark(kind, False, '订阅断连，准备重建',
+                               stage='resub')
+                    # v2.11.4：resub 路径此前没有任何等待，一旦 Next 快速失败
+                    # 就会零间隔反复重建订阅（忙等 + COM 对象反复创建销毁）。
+                    # 与订阅失败路径共用同一套退避。
+                    if self._stop.wait(backoff):
+                        return
+                    backoff = min(RETRY_MAX_SEC, backoff * 2)
                 finally:
-                    if enum:
-                        _release(enum)
-                    if services:
-                        _release(services)
+                    if not stale:
+                        if enum:
+                            _release(enum)
+                        if services:
+                            _release(services)
         except Exception as e:
             self._mark(kind, False, '运行期异常 %r' % (e,), stage='loop')
         finally:
@@ -474,9 +523,10 @@ class ProcEventWatcher(object):
         returned = wt.ULONG(0)
         hard_errors = 0
         while not self._stop.is_set():
-            hr = _com_call(enum, IDX_ENUM_NEXT, ctypes.HRESULT, _NEXT_ARGS,
+            hr = _com_call(enum, IDX_ENUM_NEXT, _HRESULT, _NEXT_ARGS,
                            (NEXT_TIMEOUT_MS, 1, ctypes.byref(obj),
                             ctypes.byref(returned)))
+            hr = int(hr or 0) & 0xFFFFFFFF
             if self._stop.is_set():
                 break
             if hr == WBEM_S_NO_ERROR and returned.value:
@@ -490,7 +540,7 @@ class ProcEventWatcher(object):
                     pflavor = wt.LONG(0)
                     name, pid = '', 0
                     try:
-                        _com_call(obj, IDX_OBJ_GET, ctypes.HRESULT, _GET_ARGS,
+                        _com_call(obj, IDX_OBJ_GET, _HRESULT, _GET_ARGS,
                                   ('ProcessName', 0, ctypes.byref(v),
                                    ctypes.byref(ptype), ctypes.byref(pflavor)))
                         name = _variant_str(v)
@@ -498,7 +548,7 @@ class ProcEventWatcher(object):
                         _oleaut32.VariantClear(ctypes.byref(v))
                     v2 = VARIANT()
                     try:
-                        _com_call(obj, IDX_OBJ_GET, ctypes.HRESULT, _GET_ARGS,
+                        _com_call(obj, IDX_OBJ_GET, _HRESULT, _GET_ARGS,
                                   ('ProcessID', 0, ctypes.byref(v2),
                                    ctypes.byref(ptype), ctypes.byref(pflavor)))
                         pid = _variant_uint(v2)
@@ -511,16 +561,25 @@ class ProcEventWatcher(object):
                     _release(obj)
                     obj = ctypes.c_void_p()
                 continue
-            if hr == WBEM_S_TIMEDOUT or not returned.value:
-                hard_errors = 0       # 超时 = 正常，查停机位再等
-                continue
-            # 其它 HRESULT：枚举器可能已被 WMI 踢掉。连续几次就重建订阅。
-            hard_errors += 1
-            self._mark(kind, False, 'Next 返回 hr=0x%08x' % (hr & 0xFFFFFFFF),
-                       hr=hr, stage='Next')
-            if hard_errors >= SUB_ERROR_LIMIT:
+            # v2.11.4 判断顺序：先认失败码，再认超时。
+            # 旧代码把 `not returned.value` 放在最前——而 RPC 断连时 WMI 根本
+            # 不填 returned（恒 0），于是断连被当成"正常超时"吞掉，重连逻辑
+            # 永远不触发（guard.log 里 RPC 失败后再无重连记录）。必须先查 hr。
+            if hr in _DISCONNECT_HRS:
+                self._mark(kind, False, 'Next 断连 hr=0x%08x' % hr,
+                           hr=hr, stage='Next')
                 return 'resub'
-            self._stop.wait(1.0)
+            if hr not in (WBEM_S_NO_ERROR, WBEM_S_TIMEDOUT):
+                # 其它 HRESULT：枚举器可能已被 WMI 踢掉。连续几次就重建订阅。
+                hard_errors += 1
+                self._mark(kind, False, 'Next 返回 hr=0x%08x' % hr,
+                           hr=hr, stage='Next')
+                if hard_errors >= SUB_ERROR_LIMIT:
+                    return 'resub'
+                self._stop.wait(1.0)
+                continue
+            # WBEM_S_NO_ERROR 但 returned=0，或明确的 TIMEDOUT：正常空轮。
+            hard_errors = 0
         return 'stop'
 
 
